@@ -91,7 +91,7 @@ def train(argv):
     icnet = ICNetModelFactory.build(
         args.image_size,
         image_generator.n_classes,
-        weights_path=args.weights_checkpoint,
+        weights_path=args.checkpoint,
         train=True
     )
 
