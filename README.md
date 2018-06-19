@@ -1,6 +1,14 @@
 # fritz-image-segmentation
 A Core ML compatible implementation of semantic segmentation with ICNet in Keras.
 
+# Example - Living Room Objects
+
+<img src="https://github.com/fritzlabs/fritz-image-segmentation/blob/master/examples/living_room.jpg?raw=true" width="300" height="200">
+<img src="https://github.com/fritzlabs/fritz-image-segmentation/blob/master/examples/example_image_and_mask.png?raw=true" width="300" height="200">
+<img src="https://github.com/fritzlabs/fritz-image-segmentation/blob/master/examples/example_pixel_probabilities.png?raw=true" width="500" height="500">
+
+[mlmodel](https://github.com/fritzlabs/fritz-image-segmentation/blob/master/examples/icnet_768x768_indoor.mlmodel)
+
 # Training Data
 The model is trained on the [ADE20K dataset](http://groups.csail.mit.edu/vision/datasets/ADE20K/) provided by MIT. You can download training and validation data with this command (note this is a 3.8GB download):
 
