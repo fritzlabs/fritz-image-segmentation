@@ -42,3 +42,9 @@ python convert_to_coreml.py /tmp/icnet.h5 /tmp/icnet.mlmodel
 
 # Benchmarks
 On a Google Cloud Compute GPU instance with a single K80, a single epoch containing roughly 1600 768x768 images takes 20 minutes. Average cross-categorical accuracy reached >80% after 12 hours. An additional 3 hours of training with a learning rate of 0.00001 increased accuracy to ~87%. Inferences with a 768x768 model can be made at 8-9fps on an iPhone X.
+
+# Additional resources
+
+* [Original ICNet Implementation](https://github.com/hszhao/ICNet)
+* [Keras-ICNet](https://github.com/aitorzip/Keras-ICNet)
+* [ICNet-tensorflow](https://github.com/hellochick/ICNet-tensorflow)
