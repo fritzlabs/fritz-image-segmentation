@@ -22,6 +22,11 @@ class ADE20KGenerator(keras.utils.Sequence):
 
     """
 
+    # Scale and bias parameters to pre-process images so pixel values are
+    # between -1 and 1
+    _PREPROCESS_IMAGE_SCALE = 2.0 / 255.0
+    _PREPROCESS_CHANNEL_BIAS = -1.0
+
     def __init__(
             self,
             root_directory,
@@ -203,11 +208,23 @@ class ADE20KGenerator(keras.utils.Sequence):
             PIL.Image.open(mask_path).resize(self.image_size)
         ).astype('float')
 
+    @classmethod
+    def preprocess_image(cls, image):
+        """Preprocess an image.
+
+        Args:
+            image (arr): an image array to process.
+
+        Return:
+            (arr) processed image data
+        """
+        return (image * cls._PREPROCESS_IMAGE_SCALE +
+                cls._PREPROCESS_CHANNEL_BIAS)
+
     def _load_image(self, image_path):
         """Load an image.
 
-        Also applies preprocessing, normalizing pixel values so they fall
-        between -1 and 1.
+        Also applies preprocessing.
 
         Args:
             image_path (str): absolute path to an image.
@@ -218,9 +235,7 @@ class ADE20KGenerator(keras.utils.Sequence):
         image = numpy.array(
             PIL.Image.open(image_path).resize(self.image_size)
         )
-        # Preprocessing
-        image = (image - 127.5) / 255.0
-        return image
+        return self.preprocess_image(image)
 
     def __len__(self):
         """Return the total number of batches in the dataset..
