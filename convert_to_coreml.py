@@ -11,11 +11,11 @@ def convert(argv):
         description='Convert a Keras ICNet model to Core ML'
     )
     parser.add_argument(
-        'keras_checkpoint', nargs=1, type=str,
+        'keras_checkpoint', nargs='?', type=str,
         help='a Keras model checkpoint to load and convert.'
     )
     parser.add_argument(
-        'mlmodel_output', nargs=1, type=str,
+        'mlmodel_output', nargs='?', type=str,
         help='a .mlmodel output file.'
     )
 
@@ -28,7 +28,7 @@ def convert(argv):
     keras_model = ICNetModelFactory.build(
         img_size,
         num_classes,
-        weights=args.keras_checkpoint,
+        weights_path=args.keras_checkpoint,
         train=False
     )
 
