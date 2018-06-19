@@ -59,10 +59,10 @@ def train(argv):
     )
     parser.add_argument(
         '-o', '--output', type=str, required=True,
-        help='An output file to save Keras weights.')
+        help='An output file to save the trained model.')
     parser.add_argument(
-        '--weights-checkpoint', type=str,
-        help='A Keras model weights checkpoint to load and continue training.'
+        '--checkpoint', type=str,
+        help='A Keras model checkpoint to load and continue training.'
     )
 
     args = parser.parse_args(argv)
@@ -91,7 +91,7 @@ def train(argv):
     icnet = ICNetModelFactory.build(
         args.image_size,
         image_generator.n_classes,
-        weights=args.weights_checkpoint,
+        weights_path=args.weights_checkpoint,
         train=True
     )
 
