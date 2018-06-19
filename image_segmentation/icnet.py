@@ -11,7 +11,7 @@ from keras.layers import UpSampling2D
 from keras.models import Model
 
 
-logger = logging.getLogger()
+logger = logging.getLogger('icnet')
 
 
 class ICNetModelFactory(object):
@@ -25,7 +25,7 @@ class ICNetModelFactory(object):
             image_size (int): the size of each image. only square images are
                 supported.
             n_classes (int): the number of output labels to predict.
-            weights_path (str): (optional) a path to a Keras weights file to
+            weights_path (str): (optional) a path to a Keras model file to
                 load after the network is constructed. Useful for re-training.
             train (bool): (optional) if true, add additional output nodes to
                 the network for training.

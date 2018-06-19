@@ -1,13 +1,4 @@
-r"""Train an ICNet Model on ADE20K Data.
-
-Usage:
-
-python train.py \
-    -d /tmp/ADEChallengeData2016/ \
-    -w "chair|wall|coffee table, cocktail table|ceiling|floor, flooring|bed|lamp|sofa, couch, lounge|windowpane, window" \
-    -e 3 \
-    -o ~/Desktop/icnet.h5
-"""
+"""Train an ICNet Model on ADE20K Data."""
 
 import argparse
 import keras
@@ -116,7 +107,7 @@ def train(argv):
             args.output,
             monitor='val_loss',
             verbose=0,
-            save_best_only=True,
+            save_best_only=False,
             mode='auto',
             period=1
         ),

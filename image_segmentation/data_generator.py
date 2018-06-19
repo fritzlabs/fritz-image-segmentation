@@ -9,7 +9,7 @@ import skimage.filters
 import logging
 import keras.utils
 
-logger = logging.getLogger()
+logger = logging.getLogger('data_generator')
 
 
 class ADE20KGenerator(keras.utils.Sequence):
