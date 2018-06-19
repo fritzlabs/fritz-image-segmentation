@@ -1,0 +1,7 @@
+Keras==2.1.6
+h5py==2.7.1
+numpy==1.14.3
+matplotlib==2.2.2
+scikit-image==0.13.1
+Pillow==5.1.0
+coremltools==0.8
