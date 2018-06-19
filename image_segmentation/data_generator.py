@@ -75,6 +75,8 @@ class ADE20KGenerator(keras.utils.Sequence):
             os.path.join(root_directory, 'annotations/', mode, '*.png'),
             recursive=True
         ))
+        self.image_path_list = self.image_path_list[:10]
+        self.mask_path_list = self.mask_path_list[:10]
 
         # If we only want certain labels, loop through all of the
         # annotations and grab just images we want.

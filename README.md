@@ -31,7 +31,7 @@ python train.py \
     -o /tmp/icnet.h5
 ```
 
-By default, a model checkpoint is saved every epoch.
+By default, a model weights checkpoint is saved every epoch. Note that only weights are saved, not the full model. This is to make it easier to build models for training vs inference.
 
 # Converting to Core ML
 The resulting Keras model can be converted using the script provided. It uses the standard `coremltools` package, but removes the additional model output nodes used for training.
