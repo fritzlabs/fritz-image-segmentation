@@ -3,7 +3,7 @@ import numpy
 import skimage.transform
 
 
-def plot_image_and_mask(img, mask, alpha=0.6):
+def plot_image_and_mask(img, mask, alpha=0.6, deprocess_func=None):
     """Plot an image and overlays a transparent segmentation mask.
 
     Args:
@@ -15,7 +15,9 @@ def plot_image_and_mask(img, mask, alpha=0.6):
         pyplot.plot: a plot
     """
     max_mask = numpy.argmax(mask, axis=-1)
-    pyplot.imshow((img * 255 + 127.5).astype(int))
+    if deprocess_func:
+        img = deprocess_func(img)
+    pyplot.imshow(img.astype(int))
     pyplot.imshow(
         skimage.transform.resize(
             max_mask,

@@ -221,6 +221,19 @@ class ADE20KGenerator(keras.utils.Sequence):
         return (image * cls._PREPROCESS_IMAGE_SCALE +
                 cls._PREPROCESS_CHANNEL_BIAS)
 
+    @classmethod
+    def deprocess_image(cls, image):
+        """Deprocess an image.
+
+        Args:
+            image (arr): an image array to process.
+
+        Return:
+            (arr) processed image data
+        """
+        return ((image - cls._PREPROCESS_CHANNEL_BIAS) /
+                cls._PREPROCESS_IMAGE_SCALE)
+
     def _load_image(self, image_path):
         """Load an image.
 
