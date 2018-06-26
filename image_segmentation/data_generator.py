@@ -23,9 +23,9 @@ class ADE20KGenerator(keras.utils.Sequence):
     """
 
     # Scale and bias parameters to pre-process images so pixel values are
-    # between -1 and 1
-    _PREPROCESS_IMAGE_SCALE = 2.0 / 255.0
-    _PREPROCESS_CHANNEL_BIAS = -1.0
+    # between -0.5 and 0.5
+    _PREPROCESS_IMAGE_SCALE = 1.0 / 255.0
+    _PREPROCESS_CHANNEL_BIAS = -0.5
 
     def __init__(
             self,
@@ -90,7 +90,7 @@ class ADE20KGenerator(keras.utils.Sequence):
         if self.whitelist_labels:
             logging.info('Scanning for images containing whitelisted labels.')
             for k, mask_path in enumerate(self.mask_path_list):
-                mask = self._load_mask(mask_path)
+                mask = self.load_mask(mask_path)
                 unique_labels = numpy.unique(mask)
                 num_found = numpy.intersect1d(
                     unique_labels,
@@ -310,11 +310,11 @@ class ADE20KGenerator(keras.utils.Sequence):
         mask_paths = self.mask_path_list[batch_start: batch_stop]
         paths = zip(image_paths, mask_paths)
         for n, (image_path, mask_path) in enumerate(paths):
-            image = self._load_image(image_path)
+            image = self.load_image(image_path)
             if image.shape[-1] != 3:
                 continue
 
-            mask = self._load_mask(mask_path)
+            mask = self.load_mask(mask_path)
             if self.whitelist_labels:
                 # The orignal masks will include all labels, even ones that
                 # aren't whitelisted. We need to create a new mask with just
