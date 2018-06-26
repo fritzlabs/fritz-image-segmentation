@@ -195,7 +195,7 @@ class ADE20KGenerator(keras.utils.Sequence):
                     index.append(idx)
         return numpy.array(index)
 
-    def _load_mask(self, mask_path):
+    def load_mask(self, mask_path):
         """Load an image segmentation mask.
 
         Args:
@@ -234,7 +234,7 @@ class ADE20KGenerator(keras.utils.Sequence):
         return ((image - cls._PREPROCESS_CHANNEL_BIAS) /
                 cls._PREPROCESS_IMAGE_SCALE)
 
-    def _load_image(self, image_path):
+    def load_image(self, image_path):
         """Load an image.
 
         Also applies preprocessing.
