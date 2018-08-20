@@ -118,21 +118,22 @@ def _convert_dataset(
             for i in range(start_idx, end_idx):
                 sys.stdout.write('\r>> Converting image %d/%d shard %d' % (
                     i + 1, num_images, shard_id))
-            sys.stdout.flush()
-            # Read the image.
-            image_filename = img_names[i]
-            image_data = tf.gfile.FastGFile(image_filename, 'r').read()
-            height, width = image_reader.read_image_dims(image_data)
-            # Read the semantic segmentation annotation.
-            seg_filename = seg_names[i]
-            seg_data = tf.gfile.FastGFile(seg_filename, 'r').read()
-            seg_height, seg_width = label_reader.read_image_dims(seg_data)
-            if height != seg_height or width != seg_width:
-                raise RuntimeError('Shape mismatched between image and label.')
-            # Convert to tf example.
-            example = build_data.image_seg_to_tfexample(
-                image_data, img_names[i], height, width, seg_data)
-            tfrecord_writer.write(example.SerializeToString())
+                sys.stdout.flush()
+                # Read the image.
+                image_filename = img_names[i]
+                image_data = tf.gfile.FastGFile(image_filename, 'rb').read()
+                height, width = image_reader.read_image_dims(image_data)
+                # Read the semantic segmentation annotation.
+                seg_filename = seg_names[i]
+                seg_data = tf.gfile.FastGFile(seg_filename, 'rb').read()
+                seg_height, seg_width = label_reader.read_image_dims(seg_data)
+                if height != seg_height or width != seg_width:
+                    raise RuntimeError(
+                        'Shape mismatched between image and label.')
+                # Convert to tf example.
+                example = build_data.image_seg_to_tfexample(
+                    image_data, img_names[i], height, width, seg_data)
+                tfrecord_writer.write(example.SerializeToString())
         sys.stdout.write('\n')
         sys.stdout.flush()
 
