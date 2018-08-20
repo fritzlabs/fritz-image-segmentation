@@ -57,9 +57,22 @@ def main(argv):
     args = parser.parse_args(argv)
 
     tf.gfile.MakeDirs(args.output_dir)
+    # Training Dataset
     _convert_dataset(
-        'train', args.train_image_folder, args.train_image_label_folder)
-    _convert_dataset('val', args.val_image_folder, args.val_image_label_folder)
+        'train',
+        args.train_image_folder,
+        args.train_image_label_folder,
+        args.output_dir,
+        args.num_shards
+    )
+    # Validation Dataset
+    _convert_dataset(
+        'val',
+        args.val_image_folder,
+        args.val_image_label_folder,
+        args.output_dir,
+        args.num_shards
+    )
 
 
 def _convert_dataset(
