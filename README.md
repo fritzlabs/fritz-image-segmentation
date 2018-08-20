@@ -11,6 +11,18 @@ unzip /tmp/ADE20K_2016_07_26.zip
 
 The dataset contains >20,000 images and corresponding segmentation masks. Masks asign one of 150 categories to each individual pixel of the image. A list of object classes is included in this repo: [objectInfo150.txt]()
 
+# Create TFRecord Dataset
+
+```
+python create_tfrecord_dataset.py \
+	--train-image-folder ../data/ADEChallengeData2016/images/training \
+	--train-image-label-folder ../data/ADEChallengeData2016/annotations/training \
+	--val-image-folder ../data/ADEChallengeData2016/images/validation \
+	--val-image-label-folder ../data/ADEChallengeData2016/annotations/validation \
+  	--output-dir ../data/ADEChallengeData2016/ \
+	--num-shards 1
+```
+
 # Training
 The model can be trained using the `train.py` script. It's recommended you train choose less than 20 image labels to train on as performance degrades after this point. The full 150 class labels is too much. A whitelist of class labels can be passed via the command line in a pipe separated string. Note that class labels much match those in the `objectInfo150.txt` exactly. Examples of valid whitelists are:
 

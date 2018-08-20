@@ -96,7 +96,8 @@ def _convert_dataset(
     for shard_id in range(num_shards):
         output_filename = os.path.join(
             output_dir,
-            '%s-%05d-of-%05d.tfrecord' % (dataset_split, shard_id, num_shards)
+            'ADE20k-%s-%05d-of-%05d.tfrecord' %
+            (dataset_split, shard_id, num_shards)
         )
         with tf.python_io.TFRecordWriter(output_filename) as tfrecord_writer:
             start_idx = shard_id * num_per_shard
