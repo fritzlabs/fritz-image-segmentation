@@ -18,7 +18,13 @@ class ICNetModelFactory(object):
     """Generates ICNet Keras Models."""
 
     @staticmethod
-    def build(img_size, n_classes, alpha=1.0, weights_path=None, train=False):
+    def build(
+            img_size,
+            n_classes,
+            alpha=1.0,
+            weights_path=None,
+            train=False,
+            input_tensor=None):
         """Build an ICNet Model.
 
         Args:image_size (int): the size of each image. only square images are
@@ -35,7 +41,7 @@ class ICNetModelFactory(object):
         if img_size % 384 != 0:
             raise Exception('`img_size` must be a multiple of 384.')
         logger.info('Building ICNet model.')
-        inpt = Input(shape=(img_size, img_size, 3))
+        inpt = Input(shape=(img_size, img_size, 3), tensor=input_tensor)
 
         # The 1/2 scale branch
         out_a = AveragePooling2D(pool_size=(2, 2), name='data_sub2')(inpt)

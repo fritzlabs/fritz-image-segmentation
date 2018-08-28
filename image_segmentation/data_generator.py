@@ -1,161 +1,50 @@
-import os
-import glob
+"""Summary.
+
+Attributes:
+    logger (TYPE): Description
+"""
 import numpy
-import PIL.Image
-import random
-import gc
-import skimage.transform
-import skimage.filters
 import logging
-import keras.utils
+import tensorflow as tf
 
 logger = logging.getLogger('data_generator')
 
 
-class ADE20KGenerator(keras.utils.Sequence):
-    """A data generator that implements the Keras Sequence protocol.
-
-    This generator feeds images from the ADE20K data set maintained by MIT.
-
-    More information on the dataset can be found here:
-        http://groups.csail.mit.edu/vision/datasets/ADE20K/
-
-    """
+class ADE20KDatasetBuilder(object):
+    """Create a TFRecord dataset from the ADE20K data."""
 
     # Scale and bias parameters to pre-process images so pixel values are
     # between -0.5 and 0.5
     _PREPROCESS_IMAGE_SCALE = 1.0 / 255.0
     _PREPROCESS_CHANNEL_BIAS = -0.5
 
-    def __init__(
-            self,
-            root_directory,
-            mode='training',
-            batch_size=1,
-            image_size=(384, 384),
-            whitelist_labels=None,
-            whitelist_threshold=0.7,
-            augment_images=True):
-        """Initalize the generator.
+    whitelist_indices = None
+    whitelist_labels = None
+
+    def __init__(self, label_filename, whitelist_labels=None):
+        """Build a ADE20K TFRecordDataset.
+
+        If a whitelist is provided, masks will be relabeled so that only pixels
+        with those labels are shown. The index of each label will be reset
+        and a 'none' label with index 0 will be used for any pixel that does
+        not contain a label in the whitelist.
 
         Args:
-            root_directory (str): the root directory containing dataset images
-            mode (str): data mode can be 'training' or 'validation'
-            batch_size (int, optional): output 'batch_size' images at at time
-            image_size ((int, int)): the output size of each image
-            whitelist_labels (List[str]): a list of object labels each image
-                must contain to be in the final dataset
-            whitelist_threshold (float, optional): for an image to be included,
-                the fraction of whitelisted labels it contains must be greater
-                than 'whitelist_threshold'
-            augment_images (bool): if true, images are augmented randomly.
+            label_filename (str): a filename for class labels
+            whitelist (List[str], optional): a list of allowed class labels
         """
-        self.mode = mode
-        self.batch_size = batch_size
-        self.image_size = image_size
-        self.root_directory = root_directory
-        self.augment_images = augment_images
-
-        # Load the class labels from the index file
-        self.class_labels = self.load_class_labels(self.root_directory)
+        self.class_labels = self.load_class_labels(label_filename)
         self.n_classes = len(self.class_labels)
-        self.whitelist_labels = whitelist_labels
-        self.whitelist_threshold = whitelist_threshold
-        # If a whitelist is specified, get the label index for each.
         if whitelist_labels:
+            self.whitelist_labels = whitelist_labels
+            # add a 'none' class with a label of 0
             self.whitelist_labels.insert(0, 'none')
-            self.whitelist_labels_index = self._find_whitelist_label_indices(
-                self.whitelist_labels
-            )
+            self.whitelist_indices = self._find_whitelist_indices(
+                whitelist_labels)
             self.n_classes = len(self.whitelist_labels)
-            logger.info('Whitelist has %d classes total.' % self.n_classes)
-
-        # It'd be nice to use iglob and just get an iterator
-        # but we need this to be sorted so the pairs match up
-        self.image_path_list = sorted(glob.glob(
-            os.path.join(root_directory, 'images/', mode, '*.jpg'),
-            recursive=True
-        ))
-        self.mask_path_list = sorted(glob.glob(
-            os.path.join(root_directory, 'annotations/', mode, '*.png'),
-            recursive=True
-        ))
-        self.image_path_list = self.image_path_list[:10]
-        self.mask_path_list = self.mask_path_list[:10]
-
-        # If we only want certain labels, loop through all of the
-        # annotations and grab just images we want.
-        keep_image_path = []
-        keep_mask_path = []
-        if self.whitelist_labels:
-            logging.info('Scanning for images containing whitelisted labels.')
-            for k, mask_path in enumerate(self.mask_path_list):
-                mask = self.load_mask(mask_path)
-                unique_labels = numpy.unique(mask)
-                num_found = numpy.intersect1d(
-                    unique_labels,
-                    self.whitelist_labels_index
-                ).size
-                if (float(num_found) / len(self.whitelist_labels_index) >=
-                        self.whitelist_threshold):
-                    keep_image_path.append(self.image_path_list[k])
-                    keep_mask_path.append(mask_path)
-            self.image_path_list = keep_image_path
-            self.mask_path_list = keep_mask_path
-            logger.info('Keeping %d images based on labels.' %
-                        len(self.image_path_list))
-
-        # Setup some placeholders
-        self._init_placeholders()
-
-    def _init_placeholders(self):
-        """Initialize placeholders.
-
-        During training, loss is computed by comparing pixel masks at multiple
-        scales. We need tensors to represent outputs for each.
-        """
-        self.X = numpy.zeros(
-            (self.batch_size, self.image_size[0], self.image_size[1], 3)
-        )
-        self.Y1 = numpy.zeros((
-            self.batch_size,
-            self.image_size[0] // 4,
-            self.image_size[1] // 4,
-            self.n_classes
-        ))
-        self.Y2 = numpy.zeros((
-            self.batch_size,
-            self.image_size[0] // 8,
-            self.image_size[1] // 8,
-            self.n_classes
-        ))
-        self.Y3 = numpy.zeros((
-            self.batch_size,
-            self.image_size[0] // 16,
-            self.image_size[1] // 16,
-            self.n_classes
-        ))
-
-    def set_image_size(self, image_size):
-        """Set the image size of the generator.
-
-        Args:
-            image_size (int): the height and width dimesion of the image
-        """
-        self.image_size = image_size
-        self._init_placeholders()
-
-    def set_batch_size(self, batch_size):
-        """Set the batch size.
-
-        Args:
-            batch_size (int): Description
-        """
-        self.batch_size = batch_size
-        self._init_placeholders()
 
     @staticmethod
-    def load_class_labels(root_directory):
+    def load_class_labels(label_filename):
         """Load class labels.
 
         Assumes the data directory is left unchanged from the original zip.
@@ -168,7 +57,7 @@ class ADE20KGenerator(keras.utils.Sequence):
         """
         class_labels = []
         header = True
-        with open(os.path.join(root_directory, 'objectInfo150.txt')) as file:
+        with open(label_filename) as file:
             for line in file.readlines():
                 if header:
                     class_labels.append('none')
@@ -179,11 +68,11 @@ class ADE20KGenerator(keras.utils.Sequence):
                 class_labels.append(label)
         return numpy.array(class_labels)
 
-    def _find_whitelist_label_indices(self, whitelist_labels):
+    def _find_whitelist_indices(self, whitelist_labels):
         """Map whitelist labels to indices.
 
         Args:
-            whitelist_labels (List[str]): a list of whitelisted labels
+            whitelist (List[str]): a list of whitelisted labels
 
         Returns:
             arr: an array of label indices
@@ -193,173 +82,282 @@ class ADE20KGenerator(keras.utils.Sequence):
             for idx, class_label in enumerate(self.class_labels):
                 if label == class_label:
                     index.append(idx)
-        return numpy.array(index)
+        return numpy.array(index).astype('uint8')
 
-    def load_mask(self, mask_path):
-        """Load an image segmentation mask.
+    @staticmethod
+    def _resize_fn(images, image_size):
+        """Resize an input images..
 
         Args:
-            mask_path (str): absolute path to the mask image.
+            images (tf.tensor): a tensor of input images
+            image_size ((int, int)): a size (H,W) to resize to
 
         Returns:
-            arr: an array of mask data
+            tf.tensor: a resized image tensor
         """
-        return numpy.array(
-            PIL.Image.open(mask_path).resize(self.image_size)
-        ).astype('float')
+        return tf.image.resize_images(
+            images,
+            image_size,
+            method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+        )
 
     @classmethod
-    def preprocess_image(cls, image):
+    def _preprocess_example(cls, example):
         """Preprocess an image.
 
         Args:
-            image (arr): an image array to process.
+            example (dict): a single example from the dataset
 
         Return:
-            (arr) processed image data
+            (dict) processed example from the dataset
         """
-        return (image * cls._PREPROCESS_IMAGE_SCALE +
-                cls._PREPROCESS_CHANNEL_BIAS)
+        example['image'] = (tf.cast(example['image'], tf.float32) *
+                            cls._PREPROCESS_IMAGE_SCALE +
+                            cls._PREPROCESS_CHANNEL_BIAS)
+        return example
 
     @classmethod
-    def deprocess_image(cls, image):
-        """Deprocess an image.
+    def _resize_example(cls, example, image_size):
+        """Resize an image and mask from.
 
         Args:
-            image (arr): an image array to process.
-
-        Return:
-            (arr) processed image data
-        """
-        return ((image - cls._PREPROCESS_CHANNEL_BIAS) /
-                cls._PREPROCESS_IMAGE_SCALE)
-
-    def load_image(self, image_path):
-        """Load an image.
-
-        Also applies preprocessing.
-
-        Args:
-            image_path (str): absolute path to an image.
+            example (dict): a single example from the dataset.
+            image_size ((int, int)): the desired size of image and mask
 
         Returns:
-            arr: an array containing image data in [H, W, C] format.
+            (dict) a single example resized
         """
-        image = numpy.array(
-            PIL.Image.open(image_path).resize(self.image_size)
-        )
-        return self.preprocess_image(image)
-
-    def __len__(self):
-        """Return the total number of batches in the dataset..
-
-        Returns:
-            int: total number of batches in the dataset.
-        """
-        return len(self.image_path_list) // self.batch_size
+        return {'image': cls._resize_fn(example['image'], image_size),
+                'mask': cls._resize_fn(example['mask'], image_size)}
 
     @staticmethod
-    def _augment_image(image, mask):
-        """Augment an image.
+    def _crop_and_resize(image, zoom, image_size):
+        """Crop and resize an image.
 
-        Applies random rotation, zooming, and blurring. Images as masks needs
-        to be augmented in the same way.
+        Uses center cropping.
 
         Args:
-            image (arr): an image to augment.
-            mask (arr): a corresponding segmentation mask
+            image (tensor): an input image tensor
+            zoom (float): a zoom factor
+            image_size ((int, int)): a desired output image size
 
-        Return:
-            augmented_image (arr): an augmented image
-            augmented_masK (arr): an augmented segmentation mask
+        Returns:
+            tensor: an outpu timage tensor
         """
+        x1 = y1 = 0.5 - 0.5 * zoom  # scale centrally
+        x2 = y2 = 0.5 + 0.5 * zoom
+        boxes = numpy.array([[y1, x1, y2, x2]], dtype=numpy.float32)
+        box_ind = [0]
+        return tf.cast(tf.squeeze(
+            tf.image.crop_and_resize(
+                tf.expand_dims(image, 0),
+                boxes,
+                box_ind,
+                image_size,
+                method='nearest'
+            )
+        ), tf.uint8)
+
+    @classmethod
+    def _augment_example(cls, example):
+        """Augment an example from the dataset.
+
+        All augmentation functions are also be applied to the segmentation
+        mask.
+
+        Args:
+            example (dict): a single example from the dataset.
+
+        Returns:
+            dict: an augmented example
+        """
+        image = example['image']
+        mask = example['mask']
+
+        image_size = image.shape.as_list()[0:2]
+
+        # Add padding so we don't get black borders
+        paddings = numpy.array(
+            [[image_size[0] / 2, image_size[0] / 2],
+             [image_size[1] / 2, image_size[1] / 2],
+             [0, 0]], dtype=numpy.uint32)
+        aug_image = tf.pad(image, paddings, mode='REFLECT')
+        aug_mask = tf.pad(mask, paddings, mode='REFLECT')
+        padded_image_size = [dim * 2 for dim in image_size]
+
         # Rotate
-        angle = numpy.random.uniform(-30, 30)
-        aug_image = skimage.transform.rotate(image, angle, mode='reflect')
-        aug_mask = skimage.transform.rotate(
-            mask, angle, mode='reflect', order=0
-        )
+        angle = numpy.random.uniform(-numpy.pi / 6, numpy.pi / 6)
+        aug_image = tf.contrib.image.rotate(aug_image, angle)
+        aug_mask = tf.contrib.image.rotate(aug_mask, angle)
 
         # Zoom
         zoom = numpy.random.uniform(0.75, 1.75)
-        transform = skimage.transform.AffineTransform(scale=(zoom, zoom))
-        aug_image = skimage.transform.warp(
-            aug_image, transform, mode='reflect'
-        )
-        aug_mask = skimage.transform.warp(
-            aug_mask, transform, mode='reflect', order=0
-        )
+        aug_image = cls._crop_and_resize(aug_image, zoom, padded_image_size)
+        aug_mask = cls._crop_and_resize(aug_mask, zoom, padded_image_size)
 
-        # Blur
-        sigma = numpy.random.uniform(0, 1)
-        aug_image = skimage.filters.gaussian(aug_image, sigma)
-        return aug_image, aug_mask
+        # Crop things back to original size
+        aug_image = tf.image.central_crop(aug_image, central_fraction=0.5)
+        aug_mask = tf.image.central_crop(aug_mask, central_fraction=0.5)
+        return {'image': aug_image, 'mask': aug_mask}
 
-    def __getitem__(self, i):
-        """Get a batch.
+    @staticmethod
+    def _decode_example(example_proto):
+        """Decode an example from a TFRecord.
 
         Args:
-            i (int): the indext of the batch.
+            example_proto (tfrecord): a serialized tf record
 
         Returns:
-            arr: a batch of images [B, H, W, C]
+            dict: an example from the dataset containing image and mask.
         """
-        batch_start = i * self.batch_size
-        batch_stop = (i + 1) * self.batch_size
-        image_paths = self.image_path_list[batch_start: batch_stop]
-        mask_paths = self.mask_path_list[batch_start: batch_stop]
-        paths = zip(image_paths, mask_paths)
-        for n, (image_path, mask_path) in enumerate(paths):
-            image = self.load_image(image_path)
-            if image.shape[-1] != 3:
-                continue
-
-            mask = self.load_mask(mask_path)
-            if self.whitelist_labels:
-                # The orignal masks will include all labels, even ones that
-                # aren't whitelisted. We need to create a new mask with just
-                # the labels we care about, re-indexed from 0 to n_classes.
-                new_mask = numpy.zeros(mask.shape)
-                for new_label, old_label in enumerate(self.whitelist_labels_index):  # NOQA
-                    idx = numpy.where(mask == old_label)
-                    new_mask[idx] = new_label
-                mask = new_mask.copy()
-
-            # Do some augmentation
-            if self.augment_images:
-                # Rotate
-                image, mask = self._augment_image(image, mask)
-
-            # Add the image to the placeholder
-            self.X[n] = image
-            self.Y1[n] = keras.utils.to_categorical(
-                skimage.transform.resize(
-                    mask,
-                    list(map(lambda x: x // 4, mask.shape)),
-                    order=0),
-                self.n_classes
+        features = {
+            "image/encoded": tf.FixedLenFeature(
+                (), tf.string, default_value=""
+            ),
+            "image/segmentation/class/encoded": tf.FixedLenFeature(
+                (), tf.string, default_value=""
             )
-            self.Y2[n] = keras.utils.to_categorical(
-                skimage.transform.resize(
-                    mask,
-                    list(map(lambda x: x // 8, mask.shape)),
-                    order=0),
-                self.n_classes
-            )
-            self.Y3[n] = keras.utils.to_categorical(
-                skimage.transform.resize(
-                    mask,
-                    list(map(lambda x: x // 16, mask.shape)),
-                    order=0),
-                self.n_classes
-            )
-        return self.X, [self.Y1, self.Y2, self.Y3]
+        }
+        parsed_features = tf.parse_single_example(example_proto, features)
+        image = tf.image.decode_jpeg(
+            parsed_features["image/encoded"], channels=3)
+        mask = tf.image.decode_png(
+            parsed_features["image/segmentation/class/encoded"], channels=3)
+        return {'image': image, 'mask': mask}
 
-    def on_epoch_end(self):
-        """Shuffle the dataset for the next epoch."""
-        file_pairs = list(zip(self.image_path_list, self.mask_path_list))
-        random.shuffle(file_pairs)
-        self.image_path_list, self.mask_path_list = zip(*file_pairs)
+    @staticmethod
+    def _filter_whitelabeled_classes(example, whitelist, whitelist_threshold):
+        """Filter examples based on whitelabeled classes.
 
-        # Fix memory leak (Keras bug)
-        gc.collect()
+        Only images containing enough classes from a whitelist will be
+        passed on for training.
+
+        In order for an image to be passed along for training, the fraction of
+        labels from the whitelist it contains must be greater than
+        `whitelist_threshold` .
+
+        Args:
+            example (dict): a single example from the dataset containing image
+                and mask
+            whitelist (List[int]): a list allowed of class label indexes
+            whitelist_threshold (float): the minimum fraction of whitelisted
+                classes an example must contain to be used for training.
+
+        Returns:
+            bool: true if the image can be used for training, false otherwise.
+        """
+        mask = example['mask']
+        # Find unique classes in label mask
+        unique_classes = tf.unique(tf.reshape(mask, [tf.size(mask)]))
+        # Count the number of labels from the whitelist we are missing
+        num_missing = tf.size(tf.setdiff1d(whitelist, unique_classes.y).out)
+        total = len(whitelist)
+        overlap = 1 - num_missing / total
+        # If the mask contains more than whitelist_thresh fraction of the
+        # whitelisted labels, include the example, otherwise skip.
+        return tf.greater_equal(overlap, whitelist_threshold)
+
+    @staticmethod
+    def _relabel_mask(example, whitelist):
+        """Relabel the mask so it includes only whitelisted labels.
+
+        The orignal masks will include all labels, even ones that
+        aren't whitelisted. We need to create a new mask with just
+        the labels we care about, re-indexed from 0 to n_classes.
+
+        Args:
+            example (dict): a single example from the dataset
+            whitelist (List[int]): a list of allowed label
+                indexes
+
+        Returns:
+            dict: a single example with the segmentation mask re-labeled
+        """
+        mask = example['mask']
+        # Find the indices of each whitelist label
+        # and pick a new value to map them to
+        new_mask = tf.reshape(mask, [tf.size(mask)])
+        idx = tf.where(tf.equal(new_mask, [[el] for el in whitelist]))
+        indices = tf.expand_dims(idx[:, 1], 1)
+        updates = idx[:, 0]
+        shape = new_mask.shape
+        # Create a new tensor with the updated labels
+        new_mask = tf.scatter_nd(
+            indices,
+            updates,
+            shape
+        )
+        # Go back to the original shape
+        example['mask'] = tf.reshape(new_mask, mask.shape)
+        return example
+
+    @classmethod
+    def _generate_multiscale_masks(cls, example, n_classes):
+        """Generate masks at mulitple scales for training.
+
+        The loss function compares masks at 4, 8, and 16x increases in scale.
+
+        Args:
+            example (dict): a single example from the dataset
+            n_classes (int): the number of classes in the mask
+
+        Returns
+            (dict): the same example, but with additional mask data for each
+                new resolution.
+        """
+        original_mask = example['mask']
+        # Add the image to the placeholder
+        image_size = example['image'].shape.as_list()[0:2]
+
+        for scale in [4, 8, 16]:
+            example['mask_%d' % scale] = tf.one_hot(
+                cls._resize_fn(
+                    original_mask,
+                    list(map(lambda x: x // scale, image_size))
+                )[:, :, 0],  # only need one channel
+                depth=n_classes,
+                dtype=tf.float32
+            )
+        return example
+
+    def build(
+            self,
+            filename,
+            batch_size,
+            image_size,
+            whitelist_threshold=0.75,
+            augment_images=True):
+        """Build a TFRecord dataset.
+
+        Args:
+            filename (str): a .tfrecord file to read
+            batch_size (int): batch size
+            image_size (int): the desired image size of examples
+            whitelist_threshold (float): the minimum fraction of whitelisted
+                classes an example must contain to be used for training.
+
+        Returns:
+            dataset: a TFRecordDataset
+        """
+        logger.info('Creating dataset from: %s' % filename)
+        dataset = tf.data.TFRecordDataset(filename)
+        dataset = dataset.map(self._decode_example)
+        dataset = dataset.map(lambda x: self._resize_example(x, image_size))
+        if self.whitelist_indices is not None:
+            dataset = dataset.filter(
+                lambda x: self._filter_whitelabeled_classes(
+                    x, self.whitelist_indices, whitelist_threshold
+                )
+            )
+            dataset = dataset.map(
+                lambda x: self._relabel_mask(x, self.whitelist_indices)
+            )
+        if augment_images:
+            dataset = dataset.map(self._augment_example)
+        dataset = dataset.map(self._preprocess_example)
+        dataset = dataset.map(
+            lambda x: self._generate_multiscale_masks(x, self.n_classes)
+        )
+        dataset = dataset.repeat()
+        dataset = dataset.batch(batch_size)
+        return dataset

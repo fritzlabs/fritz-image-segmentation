@@ -6,7 +6,7 @@ import logging
 import sys
 
 from image_segmentation.icnet import ICNetModelFactory
-from image_segmentation.data_generator import ADE20KGenerator
+from image_segmentation.data_generator import ADE20KDatasetBuilder
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('train')
@@ -19,8 +19,12 @@ def train(argv):
     )
     # Data options
     parser.add_argument(
-        '-d', '--data-directory', type=str, required=True,
-        help='The top level directory containing AED2K data.'
+        '-d', '--tfrecord-data', type=str, required=True,
+        help='A TFRecord file containing images and segmentation masks.'
+    )
+    parser.add_argument(
+        '-l', '--label-filename', type=str, required=True,
+        help='A file containing a single label per line.'
     )
     parser.add_argument(
         '-s', '--image-size', type=int, default=768,
@@ -54,8 +58,8 @@ def train(argv):
         '--lr', type=float, default=0.001, help='The learning rate.'
     )
     parser.add_argument(
-        '-e', '--epochs', type=int, default=1000,
-        help='Number of training epocs'
+        '-n', '--num-steps', type=int, default=1000,
+        help='Number of training steps to perform'
     )
     parser.add_argument(
         '-o', '--output', type=str, required=True,
@@ -70,7 +74,8 @@ def train(argv):
     if args.list_labels:
         logger.info('Labels:')
         labels = ''
-        for label in ADE20KGenerator.load_class_labels(args.data_directory):
+        for label in ADE20KDatasetBuilder.load_class_labels(
+                args.label_filename):
             labels += '%s\n' % label
         logger.info(labels)
         sys.exit()
@@ -79,20 +84,28 @@ def train(argv):
     if args.whitelist_labels:
         whitelist_labels = args.whitelist_labels.split('|')
 
-    image_generator = ADE20KGenerator(
-        args.data_directory,
+    dataset_builder = ADE20KDatasetBuilder(
+        args.label_filename,
+        whitelist_labels=whitelist_labels
+    )
+
+    dataset = dataset_builder.build(
+        args.tfrecord_data,
         batch_size=args.batch_size,
-        whitelist_labels=whitelist_labels,
         whitelist_threshold=args.whitelist_threshold,
         image_size=(args.image_size, args.image_size),
         augment_images=args.augment_images
     )
 
+    iterator = dataset.make_one_shot_iterator()
+    example = iterator.get_next()
+
     icnet = ICNetModelFactory.build(
         args.image_size,
-        image_generator.n_classes,
+        dataset_builder.n_classes,
         weights_path=args.checkpoint,
-        train=True
+        train=True,
+        input_tensor=example['image']
     )
 
     optimizer = keras.optimizers.Adam(lr=args.lr)
@@ -100,7 +113,10 @@ def train(argv):
         optimizer,
         loss=keras.losses.categorical_crossentropy,
         loss_weights=[1.0, 0.4, 0.16],
-        metrics=['categorical_accuracy']
+        metrics=['categorical_accuracy'],
+        target_tensors=[
+            example['mask_4'], example['mask_8'], example['mask_16']
+        ]
     )
 
     callbacks = [
@@ -112,10 +128,9 @@ def train(argv):
         ),
     ]
 
-    icnet.fit_generator(
-        image_generator,
-        len(image_generator),
-        epochs=args.epochs,
+    icnet.fit(
+        steps_per_epoch=args.num_steps,
+        epochs=1,
         callbacks=callbacks,
     )
 
