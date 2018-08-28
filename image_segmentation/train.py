@@ -4,6 +4,9 @@ import argparse
 import keras
 import logging
 import sys
+import os
+
+from tensorflow.python.lib.io import file_io
 
 from image_segmentation.icnet import ICNetModelFactory
 from image_segmentation.data_generator import ADE20KDatasetBuilder
@@ -32,7 +35,11 @@ def train(argv):
               'will be square.')
     )
     parser.add_argument(
-        '-a', '--augment-images', type=bool, default=True,
+        '-a', '--alpha', type=float, default=1.0,
+        help='The width multiplier for the network'
+    )
+    parser.add_argument(
+        '--augment-images', type=bool, default=True,
         help='turn on image augmentation.'
     )
     parser.add_argument(
@@ -62,14 +69,22 @@ def train(argv):
         help='Number of training steps to perform'
     )
     parser.add_argument(
+        '--steps-per-epoch', type=int, default=100,
+        help='Number of training steps to perform between model checkpoints'
+    )
+    parser.add_argument(
         '-o', '--output', type=str, required=True,
         help='An output file to save the trained model.')
     parser.add_argument(
-        '--checkpoint', type=str,
+        '--fine-tune-checkpoint', type=str,
         help='A Keras model checkpoint to load and continue training.'
     )
+    parser.add_argument(
+        '--gcs-bucket', type=str,
+        help='A GCS Bucket to save models too.'
+    )
 
-    args = parser.parse_args(argv)
+    args, unknown = parser.parse_known_args()
 
     if args.list_labels:
         logger.info('Labels:')
@@ -103,9 +118,10 @@ def train(argv):
     icnet = ICNetModelFactory.build(
         args.image_size,
         dataset_builder.n_classes,
-        weights_path=args.checkpoint,
+        weights_path=args.fine_tune_checkpoint,
         train=True,
-        input_tensor=example['image']
+        input_tensor=example['image'],
+        alpha=args.alpha
     )
 
     optimizer = keras.optimizers.Adam(lr=args.lr)
@@ -128,11 +144,47 @@ def train(argv):
         ),
     ]
 
+    if args.gcs_bucket:
+        callbacks.append(SaveCheckpointToGCS(args.output, args.gcs_bucket))
+
     icnet.fit(
-        steps_per_epoch=args.num_steps,
-        epochs=1,
+        steps_per_epoch=args.steps_per_epoch,
+        epochs=int(args.num_steps / args.steps_per_epoch) + 1,
         callbacks=callbacks,
     )
+
+
+class SaveCheckpointToGCS(keras.callbacks.Callback):
+    """A callback to save local model checkpoints to GCS."""
+
+    def __init__(self, local_filename, gcs_filename):
+        """Save a checkpoint to GCS.
+
+        Args:
+            local_filename (str): the path of the local checkpoint
+            gcs_filename (str): the GCS bucket to save the model to
+        """
+        self.gcs_filename = gcs_filename
+        self.local_filename = local_filename
+
+    @staticmethod
+    def _copy_file_to_gcs(job_dir, file_path):
+        gcs_url = os.path.join(job_dir, file_path)
+        logger.info('Saving models to GCS: %s' % gcs_url)
+        with file_io.FileIO(file_path, mode='rb') as input_f:
+            with file_io.FileIO(gcs_url, mode='w+') as output_f:
+                output_f.write(input_f.read())
+
+    def on_epoch_end(self, epoch, logs={}):
+        """Save model to GCS on epoch end.
+
+        Args:
+            epoch (int): the epoch number
+            logs (dict, optional): logs dict
+        """
+        basename = os.path.basename(self.local_filename)
+        self._copy_file_to_gcs(self.gcs_filename, basename)
+
 
 if __name__ == '__main__':
     train(sys.argv[1:])

@@ -5,7 +5,9 @@ Attributes:
 """
 import numpy
 import logging
+
 import tensorflow as tf
+from tensorflow.python.lib.io import file_io
 
 logger = logging.getLogger('data_generator')
 
@@ -57,7 +59,7 @@ class ADE20KDatasetBuilder(object):
         """
         class_labels = []
         header = True
-        with open(label_filename) as file:
+        with file_io.FileIO(label_filename, mode='r') as file:
             for line in file.readlines():
                 if header:
                     class_labels.append('none')
@@ -250,9 +252,11 @@ class ADE20KDatasetBuilder(object):
         # Find unique classes in label mask
         unique_classes = tf.unique(tf.reshape(mask, [tf.size(mask)]))
         # Count the number of labels from the whitelist we are missing
-        num_missing = tf.size(tf.setdiff1d(whitelist, unique_classes.y).out)
+        num_missing = tf.cast(
+            tf.size(tf.setdiff1d(whitelist, unique_classes.y).out), tf.float32
+        )
         total = len(whitelist)
-        overlap = 1 - num_missing / total
+        overlap = 1.0 - num_missing / total
         # If the mask contains more than whitelist_thresh fraction of the
         # whitelisted labels, include the example, otherwise skip.
         return tf.greater_equal(overlap, whitelist_threshold)

@@ -14,14 +14,21 @@
 # ==============================================================================
 
 import argparse
-import math
+from functools import partial
+import logging
 import os
-import random
+import io
+import numpy
 import sys
 
+import PIL.Image
 import tensorflow as tf
+from tensorflow.python.lib.io import file_io
 
 from image_segmentation import build_data
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('create_tfrecord_dataset')
 
 
 def main(argv):
@@ -30,57 +37,156 @@ def main(argv):
     )
 
     parser.add_argument(
-        '--train-image-folder', type=str, required=True,
+        '-i', '--image-dir', type=str, required=True,
         help='Folder containing trainng images'
     )
     parser.add_argument(
-        '--train-image-label-folder', type=str, required=True,
+        '-a', '--annoitation-dir', type=str, required=True,
         help='Folder containing annotations for trainng images'
     )
     parser.add_argument(
-        '--val-image-folder', type=str, required=True,
-        help='Folder containing validation images'
-    )
-    parser.add_argument(
-        '--val-image-label-folder', type=str, required=True,
-        help='Folder containing annotations for validation images'
-    )
-    parser.add_argument(
-        '--output-dir', type=str, required=True,
+        '-o', '--output', type=str, required=True,
         help='Path to save converted tfrecord of Tensorflow example'
     )
     parser.add_argument(
-        '--num-shards', type=int, default=1,
-        help='Number of shards to break the dataset into'
+        '-l', '--label-filename', type=str, required=True,
+        help='A file containing a single label per line.'
+    )
+    parser.add_argument(
+        '-w', '--whitelist-labels', type=str,
+        help=('A pipe | separated list of object labels to whitelist. To see a'
+              ' full list of allowed labels run with  --list-labels.')
+    )
+    parser.add_argument(
+        '-t', '--whitelist-threshold', type=float, default=0.7,
+        help=('The fraction of whitelisted labels an image must contain to be '
+              'used for training.')
+    )
+    parser.add_argument(
+        '--list-labels', action='store_true',
+        help='If true, print a full list of object labels.'
     )
 
     args = parser.parse_args(argv)
 
+    # Load the class labels
+    class_labels = _load_class_labels(args.label_filename)
+    if args.list_labels:
+        logger.info('Labels:')
+        labels = ''
+        for label in class_labels:
+            labels += '%s\n' % label
+        logger.info(labels)
+        sys.exit()
+
+    # If a whitelist is provided, get a list of mask indices that correspond
+    # to allowed labels
+    whitelist_labels = None
+    if args.whitelist_labels:
+        whitelist_labels = args.whitelist_labels.split('|')
+        # add a 'none' class with a label of 0
+        whitelist_labels.insert(0, 'none')
+        whitelist_indices = _find_whitelist_indices(
+            class_labels, whitelist_labels)
+
+        whitelist_filename = os.path.join(
+            os.path.dirname(args.output), 'whitelisted_labels.txt')
+        _save_whitelist_labels(whitelist_filename, whitelist_indices)
+
     tf.gfile.MakeDirs(args.output_dir)
-    # Training Dataset
-    _convert_dataset(
-        'train',
-        args.train_image_folder,
-        args.train_image_label_folder,
-        args.output_dir,
-        args.num_shards
-    )
-    # Validation Dataset
-    _convert_dataset(
-        'val',
-        args.val_image_folder,
-        args.val_image_label_folder,
-        args.output_dir,
-        args.num_shards
+
+    _create_tfrecord_dataset(
+        args.image_dir,
+        args.annotation_dir,
+        args.output,
+        whitelist_indices=whitelist_indices,
+        whitelist_threshold=args.whitelist_threshold
     )
 
 
-def _convert_dataset(
-        dataset_split,
-        dataset_dir,
-        dataset_label_dir,
-        output_dir,
-        num_shards=1):
+def _save_whitelist_labels(whitelist_filename, labels):
+    with open(whitelist_filename, 'w') as wfid:
+        header = 'idx,label\n'
+        wfid.write(header)
+        for idx, label in enumerate(labels):
+            wfid.write('%d,%s' % (idx, label))
+
+
+def _load_class_labels(label_filename):
+    """Load class labels.
+
+    Assumes the data directory is left unchanged from the original zip.
+
+    Args:
+        root_directory (str): the dataset's root directory
+
+    Returns:
+        arr: an array of class labels
+    """
+    class_labels = []
+    header = True
+    with file_io.FileIO(label_filename, mode='r') as file:
+        for line in file.readlines():
+            if header:
+                class_labels.append('none')
+                header = False
+                continue
+            line = line.rstrip()
+            label = line.split('\t')[-1]
+            class_labels.append(label)
+    return numpy.array(class_labels)
+
+
+def _find_whitelist_indices(class_labels, whitelist_labels):
+    """Map whitelist labels to indices.
+
+    Args:
+        whitelist (List[str]): a list of whitelisted labels
+
+    Returns:
+        arr: an array of label indices
+    """
+    index = []
+    for label in whitelist_labels:
+        for idx, class_label in enumerate(class_labels):
+            if label == class_label:
+                index.append(idx)
+    return numpy.array(index).astype('uint8')
+
+
+def _filter_whitelabel_classes(filenames, whitelist, whitelist_threshold):
+    mask = numpy.array(PIL.Image.open(filenames[-1]))
+    unique_classes = numpy.unique(mask)
+    num_found = numpy.intersect1d(unique_classes, whitelist).size
+    if float(num_found) / len(whitelist >= whitelist_threshold):
+        return True
+    return False
+
+
+def _relabel_mask(seg_data, whitelist_indices):
+    # Read the data into a numpy array.
+    mask = numpy.array(PIL.Image.open(io.BytesIO(seg_data)))
+    # Relabel each pixel
+    new_mask = numpy.zeros(mask.shape)
+    for new_label, old_label in enumerate(whitelist_indices):  # NOQA
+        idx = numpy.where(mask == old_label)
+        new_mask[idx] = new_label
+    # convert the new mask back to an image.
+    seg_img = PIL.Image.fromarray(new_mask)
+    # Save the new image to a PNG byte string.
+    byte_buffer = io.BytesIO()
+    seg_img.save(byte_buffer, format='png')
+    byte_buffer.seek(0)
+    return byte_buffer.read()
+
+
+def _create_tfrecord_dataset(
+        image_dir,
+        segmentation_mask_dir,
+        output_filename,
+        n_classes,
+        whitelist_indices=None,
+        whitelist_threshold=0.5):
     """Convert the ADE20k dataset into into tfrecord format.
 
     Args:
@@ -90,52 +196,52 @@ def _convert_dataset(
     Raises:
         RuntimeError: If loaded image and label have different shape.
     """
-    img_names = tf.gfile.Glob(os.path.join(dataset_dir, '*.jpg'))
-    random.shuffle(img_names)
+    # Get all of the image and segmentation mask file names
+    img_names = tf.gfile.Glob(os.path.join(image_dir, '*.jpg'))
     seg_names = []
     for f in img_names:
         # get the filename without the extension
         basename = os.path.basename(f).split('.')[0]
         # cover its corresponding *_seg.png
-        seg = os.path.join(dataset_label_dir, basename + '.png')
+        seg = os.path.join(segmentation_mask_dir, basename + '.png')
         seg_names.append(seg)
 
-    num_images = len(img_names)
-    num_per_shard = int(math.ceil(num_images / float(num_shards)))
+    # If a whitelist has been provided, loop over all of the segmentation
+    # masks and find only the images that contain enough classes.
+    kept_files = zip(img_names, seg_names)
+    if whitelist_indices:
+        filter_fn = partial(
+            _filter_whitelabel_classes,
+            whitelist=whitelist_indices,
+            whitelist_threshold=whitelist_threshold
+        )
+        kept_files = list(filter(filter_fn, kept_files))
 
+    num_images = len(kept_files)
     image_reader = build_data.ImageReader('jpeg', channels=3)
     label_reader = build_data.ImageReader('png', channels=1)
 
-    for shard_id in range(num_shards):
-        output_filename = os.path.join(
-            output_dir,
-            'ADE20k-%s-%05d-of-%05d.tfrecord' %
-            (dataset_split, shard_id, num_shards)
-        )
-        with tf.python_io.TFRecordWriter(output_filename) as tfrecord_writer:
-            start_idx = shard_id * num_per_shard
-            end_idx = min((shard_id + 1) * num_per_shard, num_images)
-            for i in range(start_idx, end_idx):
-                sys.stdout.write('\r>> Converting image %d/%d shard %d' % (
-                    i + 1, num_images, shard_id))
-                sys.stdout.flush()
+    with tf.python_io.TFRecordWriter(output_filename) as tfrecord_writer:
+        for idx, (image_filename, seg_filename) in enumerate(kept_files):
+            if idx % 100 == 0:
+                logger.info('Converting image %d of %d.' % (idx, num_images))
                 # Read the image.
-                image_filename = img_names[i]
                 image_data = tf.gfile.FastGFile(image_filename, 'rb').read()
                 height, width = image_reader.read_image_dims(image_data)
                 # Read the semantic segmentation annotation.
-                seg_filename = seg_names[i]
                 seg_data = tf.gfile.FastGFile(seg_filename, 'rb').read()
+                # If there is a whitelist, we need to relabel all of the
+                # mask classes so that only the whitelisted labels are present.
+                if whitelist_indices:
+                    seg_data = _relabel_mask(seg_data, whitelist_indices)
                 seg_height, seg_width = label_reader.read_image_dims(seg_data)
                 if height != seg_height or width != seg_width:
                     raise RuntimeError(
                         'Shape mismatched between image and label.')
                 # Convert to tf example.
                 example = build_data.image_seg_to_tfexample(
-                    image_data, img_names[i], height, width, seg_data)
+                    image_data, image_filename, height, width, seg_data)
                 tfrecord_writer.write(example.SerializeToString())
-        sys.stdout.write('\n')
-        sys.stdout.flush()
 
 
 if __name__ == '__main__':
