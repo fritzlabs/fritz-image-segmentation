@@ -7,6 +7,7 @@ import sys
 import os
 
 from tensorflow.python.lib.io import file_io
+import keras.backend.tensorflow_backend as K
 
 from image_segmentation.icnet import ICNetModelFactory
 from image_segmentation.data_generator import ADE20KDatasetBuilder
@@ -43,16 +44,6 @@ def train(argv):
         help='turn on image augmentation.'
     )
     parser.add_argument(
-        '-w', '--whitelist-labels', type=str,
-        help=('A pipe | separated list of object labels to whitelist. To see a'
-              ' full list of allowed labels run with  --list-labels.')
-    )
-    parser.add_argument(
-        '-t', '--whitelist-threshold', type=float, default=0.7,
-        help=('The fraction of whitelisted labels an image must contain to be '
-              'used for training.')
-    )
-    parser.add_argument(
         '--list-labels', action='store_true',
         help='If true, print a full list of object labels.'
     )
@@ -86,28 +77,24 @@ def train(argv):
 
     args, unknown = parser.parse_known_args()
 
+    K.set_session(K.tf.Session(config=K.tf.ConfigProto(log_device_placement=True)))
+
+    class_labels = ADE20KDatasetBuilder.load_class_labels(
+        args.label_filename)
     if args.list_labels:
         logger.info('Labels:')
         labels = ''
-        for label in ADE20KDatasetBuilder.load_class_labels(
-                args.label_filename):
+        for label in class_labels:
             labels += '%s\n' % label
         logger.info(labels)
         sys.exit()
 
-    whitelist_labels = None
-    if args.whitelist_labels:
-        whitelist_labels = args.whitelist_labels.split('|')
+    n_classes = len(class_labels)
 
-    dataset_builder = ADE20KDatasetBuilder(
-        args.label_filename,
-        whitelist_labels=whitelist_labels
-    )
-
-    dataset = dataset_builder.build(
+    dataset = ADE20KDatasetBuilder.build(
         args.tfrecord_data,
+        n_classes=n_classes,
         batch_size=args.batch_size,
-        whitelist_threshold=args.whitelist_threshold,
         image_size=(args.image_size, args.image_size),
         augment_images=args.augment_images
     )
@@ -117,7 +104,7 @@ def train(argv):
 
     icnet = ICNetModelFactory.build(
         args.image_size,
-        dataset_builder.n_classes,
+        n_classes,
         weights_path=args.fine_tune_checkpoint,
         train=True,
         input_tensor=example['image'],

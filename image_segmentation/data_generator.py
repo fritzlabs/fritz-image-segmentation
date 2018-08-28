@@ -20,31 +20,6 @@ class ADE20KDatasetBuilder(object):
     _PREPROCESS_IMAGE_SCALE = 1.0 / 255.0
     _PREPROCESS_CHANNEL_BIAS = -0.5
 
-    whitelist_indices = None
-    whitelist_labels = None
-
-    def __init__(self, label_filename, whitelist_labels=None):
-        """Build a ADE20K TFRecordDataset.
-
-        If a whitelist is provided, masks will be relabeled so that only pixels
-        with those labels are shown. The index of each label will be reset
-        and a 'none' label with index 0 will be used for any pixel that does
-        not contain a label in the whitelist.
-
-        Args:
-            label_filename (str): a filename for class labels
-            whitelist (List[str], optional): a list of allowed class labels
-        """
-        self.class_labels = self.load_class_labels(label_filename)
-        self.n_classes = len(self.class_labels)
-        if whitelist_labels:
-            self.whitelist_labels = whitelist_labels
-            # add a 'none' class with a label of 0
-            self.whitelist_labels.insert(0, 'none')
-            self.whitelist_indices = self._find_whitelist_indices(
-                whitelist_labels)
-            self.n_classes = len(self.whitelist_labels)
-
     @staticmethod
     def load_class_labels(label_filename):
         """Load class labels.
@@ -62,29 +37,12 @@ class ADE20KDatasetBuilder(object):
         with file_io.FileIO(label_filename, mode='r') as file:
             for line in file.readlines():
                 if header:
-                    class_labels.append('none')
                     header = False
                     continue
                 line = line.rstrip()
-                label = line.split('\t')[-1]
+                label = line.split(',')[-1]
                 class_labels.append(label)
         return numpy.array(class_labels)
-
-    def _find_whitelist_indices(self, whitelist_labels):
-        """Map whitelist labels to indices.
-
-        Args:
-            whitelist (List[str]): a list of whitelisted labels
-
-        Returns:
-            arr: an array of label indices
-        """
-        index = []
-        for label in whitelist_labels:
-            for idx, class_label in enumerate(self.class_labels):
-                if label == class_label:
-                    index.append(idx)
-        return numpy.array(index).astype('uint8')
 
     @staticmethod
     def _resize_fn(images, image_size):
@@ -227,74 +185,6 @@ class ADE20KDatasetBuilder(object):
             parsed_features["image/segmentation/class/encoded"], channels=3)
         return {'image': image, 'mask': mask}
 
-    @staticmethod
-    def _filter_whitelabeled_classes(example, whitelist, whitelist_threshold):
-        """Filter examples based on whitelabeled classes.
-
-        Only images containing enough classes from a whitelist will be
-        passed on for training.
-
-        In order for an image to be passed along for training, the fraction of
-        labels from the whitelist it contains must be greater than
-        `whitelist_threshold` .
-
-        Args:
-            example (dict): a single example from the dataset containing image
-                and mask
-            whitelist (List[int]): a list allowed of class label indexes
-            whitelist_threshold (float): the minimum fraction of whitelisted
-                classes an example must contain to be used for training.
-
-        Returns:
-            bool: true if the image can be used for training, false otherwise.
-        """
-        mask = example['mask']
-        # Find unique classes in label mask
-        unique_classes = tf.unique(tf.reshape(mask, [tf.size(mask)]))
-        # Count the number of labels from the whitelist we are missing
-        num_missing = tf.cast(
-            tf.size(tf.setdiff1d(whitelist, unique_classes.y).out), tf.float32
-        )
-        total = len(whitelist)
-        overlap = 1.0 - num_missing / total
-        # If the mask contains more than whitelist_thresh fraction of the
-        # whitelisted labels, include the example, otherwise skip.
-        return tf.greater_equal(overlap, whitelist_threshold)
-
-    @staticmethod
-    def _relabel_mask(example, whitelist):
-        """Relabel the mask so it includes only whitelisted labels.
-
-        The orignal masks will include all labels, even ones that
-        aren't whitelisted. We need to create a new mask with just
-        the labels we care about, re-indexed from 0 to n_classes.
-
-        Args:
-            example (dict): a single example from the dataset
-            whitelist (List[int]): a list of allowed label
-                indexes
-
-        Returns:
-            dict: a single example with the segmentation mask re-labeled
-        """
-        mask = example['mask']
-        # Find the indices of each whitelist label
-        # and pick a new value to map them to
-        new_mask = tf.reshape(mask, [tf.size(mask)])
-        idx = tf.where(tf.equal(new_mask, [[el] for el in whitelist]))
-        indices = tf.expand_dims(idx[:, 1], 1)
-        updates = idx[:, 0]
-        shape = new_mask.shape
-        # Create a new tensor with the updated labels
-        new_mask = tf.scatter_nd(
-            indices,
-            updates,
-            shape
-        )
-        # Go back to the original shape
-        example['mask'] = tf.reshape(new_mask, mask.shape)
-        return example
-
     @classmethod
     def _generate_multiscale_masks(cls, example, n_classes):
         """Generate masks at mulitple scales for training.
@@ -324,12 +214,13 @@ class ADE20KDatasetBuilder(object):
             )
         return example
 
+    @classmethod
     def build(
-            self,
+            cls,
             filename,
             batch_size,
             image_size,
-            whitelist_threshold=0.75,
+            n_classes,
             augment_images=True):
         """Build a TFRecord dataset.
 
@@ -337,6 +228,7 @@ class ADE20KDatasetBuilder(object):
             filename (str): a .tfrecord file to read
             batch_size (int): batch size
             image_size (int): the desired image size of examples
+            n_classes (int): the number of classes
             whitelist_threshold (float): the minimum fraction of whitelisted
                 classes an example must contain to be used for training.
 
@@ -345,22 +237,13 @@ class ADE20KDatasetBuilder(object):
         """
         logger.info('Creating dataset from: %s' % filename)
         dataset = tf.data.TFRecordDataset(filename)
-        dataset = dataset.map(self._decode_example)
-        dataset = dataset.map(lambda x: self._resize_example(x, image_size))
-        if self.whitelist_indices is not None:
-            dataset = dataset.filter(
-                lambda x: self._filter_whitelabeled_classes(
-                    x, self.whitelist_indices, whitelist_threshold
-                )
-            )
-            dataset = dataset.map(
-                lambda x: self._relabel_mask(x, self.whitelist_indices)
-            )
+        dataset = dataset.map(cls._decode_example)
+        dataset = dataset.map(lambda x: cls._resize_example(x, image_size))
         if augment_images:
-            dataset = dataset.map(self._augment_example)
-        dataset = dataset.map(self._preprocess_example)
+            dataset = dataset.map(cls._augment_example)
+        dataset = dataset.map(cls._preprocess_example)
         dataset = dataset.map(
-            lambda x: self._generate_multiscale_masks(x, self.n_classes)
+            lambda x: cls._generate_multiscale_masks(x, n_classes)
         )
         dataset = dataset.repeat()
         dataset = dataset.batch(batch_size)

@@ -41,7 +41,7 @@ def main(argv):
         help='Folder containing trainng images'
     )
     parser.add_argument(
-        '-a', '--annoitation-dir', type=str, required=True,
+        '-a', '--annotation-dir', type=str, required=True,
         help='Folder containing annotations for trainng images'
     )
     parser.add_argument(
@@ -71,6 +71,7 @@ def main(argv):
 
     # Load the class labels
     class_labels = _load_class_labels(args.label_filename)
+    n_classes = len(class_labels)
     if args.list_labels:
         logger.info('Labels:')
         labels = ''
@@ -90,15 +91,15 @@ def main(argv):
             class_labels, whitelist_labels)
 
         whitelist_filename = os.path.join(
-            os.path.dirname(args.output), 'whitelisted_labels.txt')
+            os.path.dirname(args.output), 'labels.txt')
         _save_whitelist_labels(whitelist_filename, whitelist_indices)
-
-    tf.gfile.MakeDirs(args.output_dir)
+        n_classes = len(whitelist_labels)
 
     _create_tfrecord_dataset(
         args.image_dir,
         args.annotation_dir,
         args.output,
+        n_classes,
         whitelist_indices=whitelist_indices,
         whitelist_threshold=args.whitelist_threshold
     )
@@ -109,7 +110,7 @@ def _save_whitelist_labels(whitelist_filename, labels):
         header = 'idx,label\n'
         wfid.write(header)
         for idx, label in enumerate(labels):
-            wfid.write('%d,%s' % (idx, label))
+            wfid.write('%d,%s\n' % (idx, label))
 
 
 def _load_class_labels(label_filename):
@@ -158,7 +159,7 @@ def _filter_whitelabel_classes(filenames, whitelist, whitelist_threshold):
     mask = numpy.array(PIL.Image.open(filenames[-1]))
     unique_classes = numpy.unique(mask)
     num_found = numpy.intersect1d(unique_classes, whitelist).size
-    if float(num_found) / len(whitelist >= whitelist_threshold):
+    if float(num_found) / len(whitelist) >= whitelist_threshold:
         return True
     return False
 
@@ -171,8 +172,8 @@ def _relabel_mask(seg_data, whitelist_indices):
     for new_label, old_label in enumerate(whitelist_indices):  # NOQA
         idx = numpy.where(mask == old_label)
         new_mask[idx] = new_label
-    # convert the new mask back to an image.
-    seg_img = PIL.Image.fromarray(new_mask)
+    # Convert the new mask back to an image.
+    seg_img = PIL.Image.fromarray(new_mask.astype('uint8')).convert('RGB')
     # Save the new image to a PNG byte string.
     byte_buffer = io.BytesIO()
     seg_img.save(byte_buffer, format='png')
@@ -209,14 +210,15 @@ def _create_tfrecord_dataset(
     # If a whitelist has been provided, loop over all of the segmentation
     # masks and find only the images that contain enough classes.
     kept_files = zip(img_names, seg_names)
-    if whitelist_indices:
+    if whitelist_indices is not None:
         filter_fn = partial(
             _filter_whitelabel_classes,
             whitelist=whitelist_indices,
             whitelist_threshold=whitelist_threshold
         )
         kept_files = list(filter(filter_fn, kept_files))
-
+        logger.info(
+            'Found %d images after whitelist filtereing.' % len(kept_files))
     num_images = len(kept_files)
     image_reader = build_data.ImageReader('jpeg', channels=3)
     label_reader = build_data.ImageReader('png', channels=1)
@@ -225,23 +227,23 @@ def _create_tfrecord_dataset(
         for idx, (image_filename, seg_filename) in enumerate(kept_files):
             if idx % 100 == 0:
                 logger.info('Converting image %d of %d.' % (idx, num_images))
-                # Read the image.
-                image_data = tf.gfile.FastGFile(image_filename, 'rb').read()
-                height, width = image_reader.read_image_dims(image_data)
-                # Read the semantic segmentation annotation.
-                seg_data = tf.gfile.FastGFile(seg_filename, 'rb').read()
-                # If there is a whitelist, we need to relabel all of the
-                # mask classes so that only the whitelisted labels are present.
-                if whitelist_indices:
-                    seg_data = _relabel_mask(seg_data, whitelist_indices)
-                seg_height, seg_width = label_reader.read_image_dims(seg_data)
-                if height != seg_height or width != seg_width:
-                    raise RuntimeError(
-                        'Shape mismatched between image and label.')
-                # Convert to tf example.
-                example = build_data.image_seg_to_tfexample(
-                    image_data, image_filename, height, width, seg_data)
-                tfrecord_writer.write(example.SerializeToString())
+            # Read the image.
+            image_data = tf.gfile.FastGFile(image_filename, 'rb').read()
+            height, width = image_reader.read_image_dims(image_data)
+            # Read the semantic segmentation annotation.
+            seg_data = tf.gfile.FastGFile(seg_filename, 'rb').read()
+            # If there is a whitelist, we need to relabel all of the
+            # mask classes so that only the whitelisted labels are present.
+            if whitelist_indices is not None:
+                seg_data = _relabel_mask(seg_data, whitelist_indices)
+            seg_height, seg_width = label_reader.read_image_dims(seg_data)
+            if height != seg_height or width != seg_width:
+                raise RuntimeError(
+                    'Shape mismatched between image and label.')
+            # Convert to tf example.
+            example = build_data.image_seg_to_tfexample(
+                image_data, image_filename, height, width, seg_data)
+            tfrecord_writer.write(example.SerializeToString())
 
 
 if __name__ == '__main__':

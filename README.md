@@ -2,29 +2,13 @@
 A Core ML compatible implementation of semantic segmentation with ICNet in Keras.
 
 ## Downaload Data
-The model is trained on the [ADE20K dataset](http://groups.csail.mit.edu/vision/datasets/ADE20K/) provided by MIT. You can download training and validation data with this command (note this is a 3.8GB download):
-
-```
-wget http://groups.csail.mit.edu/vision/datasets/ADE20K/ADE20K_2016_07_26.zip -P /tmp/
-unzip /tmp/ADE20K_2016_07_26.zip
-```
+The model is trained on the [ADE20K dataset](http://groups.csail.mit.edu/vision/datasets/ADE20K/) provided by MIT. You can download and prepare this data for training using this [handy script](https://github.com/tensorflow/models/blob/master/research/deeplab/datasets/download_and_convert_ade20k.sh) provided in the `TensorFlow/models/research/deeplab` repo on GitHub.
 
 The dataset contains >20,000 images and corresponding segmentation masks. Masks asign one of 150 categories to each individual pixel of the image. A list of object classes is included in this repo: [objectInfo150.txt]()
 
 ## Create TFRecord Dataset
 
-```
-python create_tfrecord_dataset.py \
-	--train-image-folder ../data/ADEChallengeData2016/images/training \
-	--train-image-label-folder ../data/ADEChallengeData2016/annotations/training \
-	--val-image-folder ../data/ADEChallengeData2016/images/validation \
-	--val-image-label-folder ../data/ADEChallengeData2016/annotations/validation \
-  	--output-dir ../data/ADEChallengeData2016/ \
-	--num-shards 1
-```
-
-## Training
-The model can be trained using the `train.py` script. It's recommended you train choose less than 20 image labels to train on as performance degrades after this point. The full 150 class labels is too much. A whitelist of class labels can be passed via the command line in a pipe separated string. Note that class labels much match those in the `objectInfo150.txt` exactly. Examples of valid whitelists are:
+Training requires data be read from TFRecords so we'll need to convert the images before we can use them. It's also recommended you train choose less than 20 image labels to train on as performance degrades after this point. The full 150 class labels is too much. A whitelist of class labels can be passed via the command line in a pipe separated string. Note that class labels much match those in the `objectInfo150.txt` exactly. Examples of valid whitelists are:
 
 ```
 "person|wall|floor, flooring"
@@ -32,6 +16,25 @@ The model can be trained using the `train.py` script. It's recommended you train
 ```
 
 You can also set the `whitelist-threshold` argument to specify the fraction of whitelisted labels that must appear in an image for it to be used in training. For example, if 10 labels are whitelisted and the threashold is set to 0.6, at least 6 of the 10 whitelisted labels must appear in the image for it to be included.
+
+Let's create a training data set for images with objects you might find in a living room or bedroom.
+
+```
+export LABEL_SET=living_room
+mkdir data/${LABEL_SET}
+python create_tfrecord_dataset.py \
+    -i data/ADEChallengeData2016/images/training/ \
+    -a data/ADEChallengeData2016/annotations/training/ \
+    -o data/${LABEL_SET}/${LABEL_SET}_data.tfrecord \
+    -l data/objectInfo150.txt \
+    -w "chair|wall|coffee table, cocktail table|ceiling|floor, flooring|bed|lamp|sofa, couch, lounge|windowpane, window" \
+    -t 0.7
+```
+
+This script also automatically outputs a new set of labels and indices in a file named `labels.txt` found in the same directory as the `.tfrecord` output.
+
+## Training
+The model can be trained using the `train.py` script.
 
 Before you start, make sure the `image_segmentation` model is on your $PYTHONPATH. From the `fritz-image-segmentation` root directory.
 
@@ -45,12 +48,12 @@ Train the model for 10 steps by running:
 ```
 export LABEL_SET=living_room
 python image_segmentation/train.py \
-    -d data/ADE20k-train-00000-of-00001.tfrecord \
-    -l data/objectInfo150.txt \
-    -w "chair|wall|coffee table, cocktail table|ceiling|floor, flooring|bed|lamp|sofa, couch, lounge|windowpane, window" \
+    -d data/${LABEL_SET}/${LABEL_SET}_data.tfrecord \
+    -l data/${LABEL_SET}/labels.txt \
     -n 10 \
-    -o data/${LABEL_SET}_icnet.h5 \
-    -b 1
+    -s 768 \
+    -a 0.25 \
+    -o data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_025.h5
 ```
 
 By default, a model weights checkpoint is saved every epoch. Note that only weights are saved, not the full model. This is to make it easier to build models for training vs inference.
@@ -58,6 +61,7 @@ By default, a model weights checkpoint is saved every epoch. Note that only weig
 ### Training on Google Cloud ML
 ```
 export LABEL_SET=living_room
+export YOUR_GCS_BUCKET=fritz-image-segmentation
 gcloud ml-engine jobs submit training `whoami`_image_segmentation_`date +%s` \
     --runtime-version 1.9 \
     --job-dir=gs://${YOUR_GCS_BUCKET} \
@@ -66,9 +70,8 @@ gcloud ml-engine jobs submit training `whoami`_image_segmentation_`date +%s` \
     --region us-east1 \
     --scale-tier basic_gpu \
     -- \
-    -d gs://fritz-data-sandbox/ADEChallengeData2016/ADE20k-train-00000-of-00001.tfrecord \
-    -l gs://fritz-data-sandbox/ADEChallengeData2016/objectInfo150.txt \
-    -w "chair|wall|coffee table, cocktail table|ceiling|floor, flooring|bed|lamp|sofa, couch, lounge|windowpane, window" \
+    -d gs://${YOUR_GCS_BUCKET}/data/${LABEL_SET}/${LABEL_SET}_data.tfrecord \
+    -l gs://${YOUR_GCS_BUCKET}/data/${LABEL_SET}/labels.txt \
     -o ${LABEL_SET}_768x768_025.h5 \
     --image-size 768 \
     --alpha 0.25 \
