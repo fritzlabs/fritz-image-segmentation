@@ -84,7 +84,7 @@ gcloud ml-engine jobs submit training `whoami`_image_segmentation_`date +%s` \
 The resulting Keras model can be converted using the script provided. It uses the standard `coremltools` package, but removes the additional model output nodes used for training.
 
 ```
-python convert_to_coreml.py data/icnet.h5 data/icnet.mlmodel
+python convert_to_coreml.py --alpha 0.25 ${LABEL_SET}_768x768_025.h5 ${LABEL_SET}_768x768_025.mlmodel
 ```
 
 Once you've got your Core ML model, you can use [Fritz](www.fritz.ai) to integrate, deploy, and manage it in your app. For more tutorials on mobile machine learning, check out [Heartbeat](heartbeat.fritz.ai).
