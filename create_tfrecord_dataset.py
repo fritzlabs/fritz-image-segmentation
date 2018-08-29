@@ -92,7 +92,7 @@ def main(argv):
 
         whitelist_filename = os.path.join(
             os.path.dirname(args.output), 'labels.txt')
-        _save_whitelist_labels(whitelist_filename, whitelist_indices)
+        _save_whitelist_labels(whitelist_filename, whitelist_labels)
         n_classes = len(whitelist_labels)
 
     _create_tfrecord_dataset(
@@ -107,10 +107,10 @@ def main(argv):
 
 def _save_whitelist_labels(whitelist_filename, labels):
     with open(whitelist_filename, 'w') as wfid:
-        header = 'idx,label\n'
+        header = 'idx\tlabel\n'
         wfid.write(header)
         for idx, label in enumerate(labels):
-            wfid.write('%d,%s\n' % (idx, label))
+            wfid.write('%d\t%s\n' % (idx, label))
 
 
 def _load_class_labels(label_filename):

@@ -7,7 +7,6 @@ import sys
 import os
 
 from tensorflow.python.lib.io import file_io
-import keras.backend.tensorflow_backend as K
 
 from image_segmentation.icnet import ICNetModelFactory
 from image_segmentation.data_generator import ADE20KDatasetBuilder
@@ -76,8 +75,6 @@ def train(argv):
     )
 
     args, unknown = parser.parse_known_args()
-
-    K.set_session(K.tf.Session(config=K.tf.ConfigProto(log_device_placement=True)))
 
     class_labels = ADE20KDatasetBuilder.load_class_labels(
         args.label_filename)

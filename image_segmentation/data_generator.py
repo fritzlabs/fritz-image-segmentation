@@ -40,7 +40,7 @@ class ADE20KDatasetBuilder(object):
                     header = False
                     continue
                 line = line.rstrip()
-                label = line.split(',')[-1]
+                label = line.split('\t')[-1]
                 class_labels.append(label)
         return numpy.array(class_labels)
 
