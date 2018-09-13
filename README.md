@@ -12,7 +12,7 @@ Training requires data be read from TFRecords so we'll need to convert the image
 
 ```
 "person|wall|floor, flooring"
-"chair|wall|coffee table, cocktail table|ceiling|floor, flooring|bed|lamp|sofa, couch, lounge|windowpane, window"
+"chair|wall|coffee table, cocktail table|ceiling|floor, flooring|bed|lamp|sofa, couch, lounge|windowpane, window|pillow"
 ```
 
 You can also set the `whitelist-threshold` argument to specify the fraction of whitelisted labels that must appear in an image for it to be used in training. For example, if 10 labels are whitelisted and the threashold is set to 0.6, at least 6 of the 10 whitelisted labels must appear in the image for it to be included.
@@ -27,8 +27,8 @@ python create_tfrecord_dataset.py \
     -a data/ADEChallengeData2016/annotations/training/ \
     -o data/${LABEL_SET}/${LABEL_SET}_data.tfrecord \
     -l data/objectInfo150.txt \
-    -w "chair|wall|coffee table, cocktail table|ceiling|floor, flooring|bed|lamp|sofa, couch, lounge|windowpane, window" \
-    -t 0.7
+    -w "chair|wall|coffee table, cocktail table|ceiling|floor, flooring|bed|lamp|sofa, couch, lounge|windowpane, window|pillow" \
+    -t 0.6
 ```
 
 This script also automatically outputs a new set of labels and indices in a file named `labels.txt` found in the same directory as the `.tfrecord` output.
