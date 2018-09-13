@@ -4,7 +4,7 @@ from setuptools import find_packages
 from setuptools import setup
 
 
-REQUIRED_PACKAGES = ['h5py', 'keras==2.1.2', 'Pillow']
+REQUIRED_PACKAGES = ['h5py', 'keras==2.1.2', 'Pillow', 'matplotlib']
 
 setup(
     name='image_segmentation',

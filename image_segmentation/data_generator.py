@@ -106,7 +106,7 @@ class ADE20KDatasetBuilder(object):
         """
         x1 = y1 = 0.5 - 0.5 * zoom  # scale centrally
         x2 = y2 = 0.5 + 0.5 * zoom
-        boxes = numpy.array([[y1, x1, y2, x2]], dtype=numpy.float32)
+        boxes = tf.stack([y1, x1, y2, x2], axis=1)
         box_ind = [0]
         return tf.cast(tf.squeeze(
             tf.image.crop_and_resize(
@@ -146,12 +146,12 @@ class ADE20KDatasetBuilder(object):
         padded_image_size = [dim * 2 for dim in image_size]
 
         # Rotate
-        angle = numpy.random.uniform(-numpy.pi / 6, numpy.pi / 6)
+        angle = tf.random_uniform([1], -numpy.pi / 6, numpy.pi / 6)
         aug_image = tf.contrib.image.rotate(aug_image, angle)
         aug_mask = tf.contrib.image.rotate(aug_mask, angle)
 
         # Zoom
-        zoom = numpy.random.uniform(0.75, 1.75)
+        zoom = tf.random_uniform([1], 0.85, 1.75)
         aug_image = cls._crop_and_resize(aug_image, zoom, padded_image_size)
         aug_mask = cls._crop_and_resize(aug_mask, zoom, padded_image_size)
 
