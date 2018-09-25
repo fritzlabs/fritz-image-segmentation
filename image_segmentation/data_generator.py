@@ -136,13 +136,15 @@ class ADE20KDatasetBuilder(object):
     @staticmethod
     def _blur(image, sigma):
         kernel = _gaussian_kernel_3d(sigma)
-        #kernel_const = tf.constant(kernel)
-        blurred_image = tf.nn.depthwise_conv2d(
+        # all preprocessing should run on the CPU
+        with tf.device('/cpu:0'):
+            blurred_image = tf.nn.depthwise_conv2d(
             tf.cast(tf.expand_dims(image, 0), tf.float32),
-            kernel,
-            [1, 1, 1, 1],
-            padding='SAME'
-        )
+                kernel,
+                [1, 1, 1, 1],
+                padding='SAME',
+                data_format="NHWC"
+            )
         return blurred_image[0]
 
     @classmethod
@@ -189,6 +191,7 @@ class ADE20KDatasetBuilder(object):
         # blur
         sigma = tf.random_uniform([1], 0.0, 2.0)
         aug_image = cls._blur(aug_image, sigma)
+       
         return {'image': aug_image, 'mask': aug_mask}
 
     @staticmethod
