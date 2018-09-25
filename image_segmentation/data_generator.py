@@ -3,13 +3,28 @@
 Attributes:
     logger (TYPE): Description
 """
-import numpy
 import logging
 
+import numpy
+import scipy
 import tensorflow as tf
 from tensorflow.python.lib.io import file_io
 
 logger = logging.getLogger('data_generator')
+
+
+def _gaussian_kernel_3d(sigma, channels=3, size=4.0):
+    radius = sigma * size / 2.0 + 0.5
+    gauss = tf.distributions.Normal(0., sigma)
+    kernel_1d = gauss.prob(
+        tf.range(-radius[0], radius[0] + 1.0, dtype=tf.float32)
+    )
+    kernel_2d = tf.sqrt(tf.einsum('i,j->ij', kernel_1d, kernel_1d))
+    kernel_2d = kernel_2d / tf.reduce_sum(kernel_2d)
+    kernel = tf.expand_dims(kernel_2d, -1)
+    kernel = tf.expand_dims(kernel, -1)
+    kernel = tf.tile(kernel, [1, 1, channels, 1])
+    return kernel
 
 
 class ADE20KDatasetBuilder(object):
@@ -118,6 +133,18 @@ class ADE20KDatasetBuilder(object):
             )
         ), tf.uint8)
 
+    @staticmethod
+    def _blur(image, sigma):
+        kernel = _gaussian_kernel_3d(sigma)
+        #kernel_const = tf.constant(kernel)
+        blurred_image = tf.nn.depthwise_conv2d(
+            tf.cast(tf.expand_dims(image, 0), tf.float32),
+            kernel,
+            [1, 1, 1, 1],
+            padding='SAME'
+        )
+        return blurred_image[0]
+
     @classmethod
     def _augment_example(cls, example):
         """Augment an example from the dataset.
@@ -158,6 +185,10 @@ class ADE20KDatasetBuilder(object):
         # Crop things back to original size
         aug_image = tf.image.central_crop(aug_image, central_fraction=0.5)
         aug_mask = tf.image.central_crop(aug_mask, central_fraction=0.5)
+
+        # blur
+        sigma = tf.random_uniform([1], 0.0, 2.0)
+        aug_image = cls._blur(aug_image, sigma)
         return {'image': aug_image, 'mask': aug_mask}
 
     @staticmethod
