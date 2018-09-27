@@ -189,9 +189,35 @@ class ADE20KDatasetBuilder(object):
         aug_mask = tf.image.central_crop(aug_mask, central_fraction=0.5)
 
         # blur
-        sigma = tf.random_uniform([1], 0.0, 2.0)
-        aug_image = cls._blur(aug_image, sigma)
-       
+        # sigma = tf.random_uniform([1], 0.0, 1.0)
+        # aug_image = cls._blur(aug_image, sigma)
+
+        # Flip left right
+        do_flip = tf.greater(tf.random_uniform([1], 0.0, 1.0)[0], 0.5)
+        aug_image = tf.cond(
+            do_flip,
+            true_fn=lambda: tf.image.flip_left_right(aug_image),
+            false_fn=lambda: aug_image,
+        )
+        aug_mask = tf.cond(
+            do_flip,
+            true_fn=lambda: tf.image.flip_left_right(aug_mask),
+            false_fn=lambda: aug_mask,
+        )
+
+        # Flip up down
+        do_flip = tf.greater(tf.random_uniform([1], 0.0, 1.0)[0], 0.5)
+        aug_image = tf.cond(
+            do_flip,
+            true_fn=lambda: tf.image.flip_up_down(aug_image),
+            false_fn=lambda: aug_image,
+        )
+        aug_mask = tf.cond(
+            do_flip,
+            true_fn=lambda: tf.image.flip_up_down(aug_mask),
+            false_fn=lambda: aug_mask,
+        )
+
         return {'image': aug_image, 'mask': aug_mask}
 
     @staticmethod
