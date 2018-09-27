@@ -6,7 +6,6 @@ Attributes:
 import logging
 
 import numpy
-import scipy
 import tensorflow as tf
 from tensorflow.python.lib.io import file_io
 
@@ -189,6 +188,7 @@ class ADE20KDatasetBuilder(object):
         aug_mask = tf.image.central_crop(aug_mask, central_fraction=0.5)
 
         # blur
+        # Not used at the moment because it makes training hard
         # sigma = tf.random_uniform([1], 0.0, 1.0)
         # aug_image = cls._blur(aug_image, sigma)
 
