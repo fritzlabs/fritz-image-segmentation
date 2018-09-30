@@ -83,6 +83,7 @@ def main(argv):
     # If a whitelist is provided, get a list of mask indices that correspond
     # to allowed labels
     whitelist_labels = None
+    whitelist_indices = None
     if args.whitelist_labels:
         whitelist_labels = args.whitelist_labels.split('|')
         # add a 'none' class with a label of 0

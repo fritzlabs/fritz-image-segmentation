@@ -31,8 +31,6 @@ import collections
 import six
 import tensorflow as tf
 
-FLAGS = tf.app.flags.FLAGS
-
 IMAGE_FORMAT = 'jpeg'
 LABEL_FORMAT = 'png'
 
