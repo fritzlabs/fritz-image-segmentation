@@ -78,7 +78,7 @@ def main(argv):
         logger.info('Labels:')
         labels = ''
         for label in class_labels:
-            labels += '%s\n' % label
+            labels += '%d, %s\n' % label
         logger.info(labels)
         sys.exit()
 
@@ -87,7 +87,6 @@ def main(argv):
     whitelist_labels = None
     whitelist_indices = None
     if args.whitelist_labels:
-
         whitelist_labels = _parse_whitelist_labels(args.whitelist_labels)
         # add a 'none' class with a label of 0
         whitelist_labels.insert(0, ['none'])
@@ -119,7 +118,7 @@ def _save_whitelist_labels(whitelist_filename, labels):
         header = 'idx\tlabel\n'
         wfid.write(header)
         for idx, label_set in enumerate(labels):
-            label = ':'.join(label_set)
+            label = ':'.join(label_set[0])
             wfid.write('%d\t%s\n' % (idx, label))
 
 
@@ -132,20 +131,22 @@ def _load_class_labels(label_filename):
         root_directory (str): the dataset's root directory
 
     Returns:
-        arr: an array of class labels
+        List[(int, str)]: a list of class ids and labels
     """
     class_labels = []
     header = True
     with file_io.FileIO(label_filename, mode='r') as file:
         for line in file.readlines():
             if header:
-                class_labels.append('none')
+                class_labels.append((0, 'none'))
                 header = False
                 continue
             line = line.rstrip()
-            label = line.split('\t')[-1]
-            class_labels.append(label)
-    return numpy.array(class_labels)
+            line = line.split('\t')
+            label = line[-1]
+            label_id = int(line[0])
+            class_labels.append((label_id, label))
+    return class_labels
 
 
 def _find_whitelist_indices(class_labels, whitelist_labels):
@@ -161,9 +162,9 @@ def _find_whitelist_indices(class_labels, whitelist_labels):
     for label_set in whitelist_labels:
         index_set = []
         for label in label_set:
-            for idx, class_label in enumerate(class_labels):
+            for class_id, class_label in class_labels:
                 if label == class_label:
-                    index_set.append(idx)
+                    index_set.append(class_id)
         index.append(index_set)
     return index
 
@@ -235,7 +236,6 @@ def _create_tfrecord_dataset(
         flat_whitelist = numpy.array(
             [idx for idx_set in whitelist_indices for idx in idx_set]
         ).astype('uint8')
-        print(whitelist_indices, flat_whitelist)
         merged_whitelist_size = len(whitelist_indices)
         filter_fn = partial(
             _filter_whitelabel_classes,
