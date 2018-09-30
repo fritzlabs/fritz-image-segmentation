@@ -54,7 +54,9 @@ def main(argv):
     )
     parser.add_argument(
         '-w', '--whitelist-labels', type=str,
-        help=('A pipe | separated list of object labels to whitelist. To see a'
+        help=('A pipe | separated list of object labels to whitelist. '
+              'categories can be merged by seperating them by : '
+              'e.g. "person|car:truck:van|pavement". To see a'
               ' full list of allowed labels run with  --list-labels.')
     )
     parser.add_argument(
@@ -85,9 +87,10 @@ def main(argv):
     whitelist_labels = None
     whitelist_indices = None
     if args.whitelist_labels:
-        whitelist_labels = args.whitelist_labels.split('|')
+
+        whitelist_labels = _parse_whitelist_labels(args.whitelist_labels)
         # add a 'none' class with a label of 0
-        whitelist_labels.insert(0, 'none')
+        whitelist_labels.insert(0, ['none'])
         whitelist_indices = _find_whitelist_indices(
             class_labels, whitelist_labels)
 
@@ -106,11 +109,17 @@ def main(argv):
     )
 
 
+def _parse_whitelist_labels(whitelist):
+    parsed = whitelist.split('|')
+    parsed = [category.split(':') for category in parsed]
+    return parsed
+
 def _save_whitelist_labels(whitelist_filename, labels):
     with open(whitelist_filename, 'w') as wfid:
         header = 'idx\tlabel\n'
         wfid.write(header)
-        for idx, label in enumerate(labels):
+        for idx, label_set in enumerate(labels):
+            label = ':'.join(label_set)
             wfid.write('%d\t%s\n' % (idx, label))
 
 
@@ -146,21 +155,29 @@ def _find_whitelist_indices(class_labels, whitelist_labels):
         whitelist (List[str]): a list of whitelisted labels
 
     Returns:
-        arr: an array of label indices
+        List[Set]: a list of sets containing index labels
     """
     index = []
-    for label in whitelist_labels:
-        for idx, class_label in enumerate(class_labels):
-            if label == class_label:
-                index.append(idx)
-    return numpy.array(index).astype('uint8')
+    for label_set in whitelist_labels:
+        index_set = []
+        for label in label_set:
+            for idx, class_label in enumerate(class_labels):
+                if label == class_label:
+                    index_set.append(idx)
+        index.append(index_set)
+    return index
 
 
-def _filter_whitelabel_classes(filenames, whitelist, whitelist_threshold):
+def _filter_whitelabel_classes(
+        filenames,
+        whitelist,
+        whitelist_threshold,
+        whitelist_size=None):
+    w_size = whitelist_size or len(whitelist)
     mask = numpy.array(PIL.Image.open(filenames[-1]))
     unique_classes = numpy.unique(mask)
     num_found = numpy.intersect1d(unique_classes, whitelist).size
-    if float(num_found) / len(whitelist) >= whitelist_threshold:
+    if float(num_found) / w_size >= whitelist_threshold:
         return True
     return False
 
@@ -170,8 +187,8 @@ def _relabel_mask(seg_data, whitelist_indices):
     mask = numpy.array(PIL.Image.open(io.BytesIO(seg_data)))
     # Relabel each pixel
     new_mask = numpy.zeros(mask.shape)
-    for new_label, old_label in enumerate(whitelist_indices):  # NOQA
-        idx = numpy.where(mask == old_label)
+    for new_label, old_label_set in enumerate(whitelist_indices):
+        idx = numpy.where(numpy.isin(mask, old_label_set))
         new_mask[idx] = new_label
     # Convert the new mask back to an image.
     seg_img = PIL.Image.fromarray(new_mask.astype('uint8')).convert('RGB')
@@ -212,10 +229,19 @@ def _create_tfrecord_dataset(
     # masks and find only the images that contain enough classes.
     kept_files = zip(img_names, seg_names)
     if whitelist_indices is not None:
+        # Flatten the whitelist because some categories have been merged
+        # but make sure to use the orginal list size when
+        # computing the threshold.
+        flat_whitelist = numpy.array(
+            [idx for idx_set in whitelist_indices for idx in idx_set]
+        ).astype('uint8')
+        print(whitelist_indices, flat_whitelist)
+        merged_whitelist_size = len(whitelist_indices)
         filter_fn = partial(
             _filter_whitelabel_classes,
-            whitelist=whitelist_indices,
-            whitelist_threshold=whitelist_threshold
+            whitelist=flat_whitelist,
+            whitelist_threshold=whitelist_threshold,
+            whitelist_size=merged_whitelist_size
         )
         kept_files = list(filter(filter_fn, kept_files))
         logger.info(
