@@ -59,6 +59,14 @@ python image_segmentation/train.py \
 By default, a model weights checkpoint is saved every epoch. Note that only weights are saved, not the full model. This is to make it easier to build models for training vs inference.
 
 ### Training on Google Cloud ML
+Zip up all of the local files to send up to Google Cloud.
+
+```
+# from fritz-image-segmentation/
+python setup.py sdist
+```
+Run the training job.
+
 ```
 export LABEL_SET=living_room
 export YOUR_GCS_BUCKET=fritz-image-segmentation
