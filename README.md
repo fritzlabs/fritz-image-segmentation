@@ -95,7 +95,7 @@ The resulting Keras model can be converted using the script provided. It uses th
 python convert_to_coreml.py --alpha 0.25 ${LABEL_SET}_768x768_025.h5 ${LABEL_SET}_768x768_025.mlmodel
 ```
 
-Once you've got your Core ML model, you can use [Fritz](www.fritz.ai) to integrate, deploy, and manage it in your app. For more tutorials on mobile machine learning, check out [Heartbeat](heartbeat.fritz.ai).
+Once you've got your Core ML model, you can use [Fritz](https://www.fritz.ai) to integrate, deploy, and manage it in your app. For more tutorials on mobile machine learning, check out [Heartbeat](https://heartbeat.fritz.ai).
 
 ## Benchmarks
 On a Google Cloud Compute GPU instance with a single K80, a single epoch containing roughly 1600 768x768 images takes 20 minutes. Average cross-categorical accuracy reached >80% after 12 hours. An additional 3 hours of training with a learning rate of 0.00001 increased accuracy to ~87%. Inferences with a 768x768 model can be made at 8-9fps on an iPhone X.
