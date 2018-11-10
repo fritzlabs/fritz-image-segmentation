@@ -1,21 +1,2 @@
 trainingInput:
   scaleTier: BASIC_GPU
-
-
-
-# large v100
-# 1 core,
-
-# large v100
-# 10000 images (batch size 2)
-# 3h 14 min
-
-# large v100
-# 5000 images
-# 1h 14 min
-
-# large v100
-# 40000 images
-# 1h 14 min
-
-#

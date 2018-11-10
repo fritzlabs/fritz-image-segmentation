@@ -400,7 +400,7 @@ class ICNetModelFactory(object):
         out = UpSampling2D(size=(4, 4), name='conv6_interp',
                            interpolation='bilinear')(out_1)
 
-        if train and not train_refinement:
+        if train:
             aux_1 = Conv2D(n_classes, 1, activation='softmax',
                            name='sub4_out')(aux_1)
             aux_2 = Conv2D(n_classes, 1, activation='softmax',

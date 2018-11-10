@@ -90,8 +90,8 @@ def train(argv):
         help='A GCS Bucket to save models too.'
     )
     parser.add_argument(
-        '--refine', action='store_true', default=False,
-        help='refine model or not.'
+        '--parallel-calls', type=int, default=1,
+        help='Number of parallel calss to preprocessing to perform.'
     )
 
     args, unknown = parser.parse_known_args()
@@ -116,7 +116,7 @@ def train(argv):
         batch_size=args.batch_size,
         image_size=(args.image_size, args.image_size),
         augment_images=False,
-        parallel_calls=4,
+        parallel_calls=args.parallel_calls,
         prefetch=True,
     )
 
@@ -125,9 +125,6 @@ def train(argv):
 
     sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
     keras.backend.set_session = sess
-
-    build_refinement = args.refine
-    train_refinement = args.refine
 
     if args.cores > 1:
         with tf.device('/CPU:0'):
@@ -138,8 +135,6 @@ def train(argv):
                 train=True,
                 input_tensor=example['image'],
                 alpha=args.alpha,
-                build_refinement=build_refinement,
-                train_refinement=train_refinement,
             )
 
         gpu_icnet = keras.utils.multi_gpu_model(icnet, gpus=args.cores)
@@ -154,8 +149,6 @@ def train(argv):
                 train=True,
                 input_tensor=example['image'],
                 alpha=args.alpha,
-                train_refinement=train_refinement,
-                build_refinement=build_refinement,
             )
 
     optimizer = keras.optimizers.Adam(lr=args.lr)

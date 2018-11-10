@@ -38,7 +38,8 @@ train-local:
 	    -s 768 \
 	    -a 1 \
 	    --steps-per-epoch 50 \
-	    --batch-size 18 \
+	    --batch-size 32 \
+	    --parallel-calls 8 \
 	    --lr 0.0001 \
 	    -o data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1.h5
 
