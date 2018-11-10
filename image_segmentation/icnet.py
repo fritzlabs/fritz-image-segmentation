@@ -2,8 +2,12 @@ import logging
 from functools import partial
 import os
 
+from keras.backend import argmax
+import keras.backend as K
 from keras.layers import Activation
+from keras.layers import Concatenate
 from keras.layers import Conv2D
+from keras.layers import Lambda
 from keras.layers import Add
 from keras.layers import MaxPooling2D
 from keras.layers import AveragePooling2D
@@ -14,8 +18,7 @@ from keras.layers import UpSampling2D
 from keras.models import Model
 
 from tensorflow.python.lib.io import file_io
-
-
+import tensorflow as tf
 logger = logging.getLogger('icnet')
 
 
@@ -168,7 +171,7 @@ class ICNetModelFactory(object):
         if include_projection:
             out_a = Conv2D(
                 filters=filter_scale * 4,
-                kernel_size=1, 
+                kernel_size=1,
                 use_bias=False,
                 strides=strides[0],
                 name='%s_1x1_proj' % block_name
@@ -215,7 +218,8 @@ class ICNetModelFactory(object):
         Returns
             out - a keras layer output
         """
-        aux_1 = UpSampling2D(size=(2, 2), name='%s_interp' % block_name)(out_a)
+        aux_1 = UpSampling2D(size=(2, 2), name='%s_interp' % block_name,
+                             interpolation='bilinear')(out_a)
         out_a = ZeroPadding2D(padding=2, name='%s_padding' % block_name)(aux_1)
         out_a = Conv2D(
             filters=filter_scale,
@@ -233,12 +237,11 @@ class ICNetModelFactory(object):
                 use_bias=False,
                 name='%s_proj' % block_name)(out_b)
             out_b = BatchNormalization(name='%s_proj_bn' % block_name)(out_b)
-    
+
         out_a = Add(name='%s_sum' % block_name)([out_a, out_b])
         out_a = Activation('relu', name='%s_sum_relu' % block_name)(out_a)
 
         return out_a, aux_1
-
 
     @classmethod
     def build(
@@ -248,10 +251,13 @@ class ICNetModelFactory(object):
             alpha=1.0,
             weights_path=None,
             train=False,
-            input_tensor=None):
+            input_tensor=None,
+            build_refinement=None,
+            train_refinement=None):
         """Build an ICNet Model.
 
-        Args:image_size (int): the size of each image. only square images are
+        Args:
+            image_size (int): the size of each image. only square images are
                 supported.
             n_classes (int): the number of output labels to predict.
             weights_path (str): (optional) a path to a Keras model file to
@@ -290,7 +296,7 @@ class ICNetModelFactory(object):
 
         for layer_index in range(1, 4):
             out_2 = cls._conv_block(
-                out_2, 
+                out_2,
                 filter_scale=int(alpha * 32),
                 include_projection=(layer_index == 1),
                 block_name='sub2_conv%d_%d' % (2, layer_index)
@@ -298,7 +304,7 @@ class ICNetModelFactory(object):
 
         # The third large conv block gets split off into another branch.
         out_2 = cls._conv_block(
-            out_2, 
+            out_2,
             filter_scale=int(alpha * 64),
             include_projection=True,
             strides=[2, 1, 1],
@@ -341,22 +347,26 @@ class ICNetModelFactory(object):
                                  strides=pool_height,
                                  name='sub4_conv5_3_pool1')(out_4)
         pool1 = UpSampling2D(size=12 * pool_scale,
-                             name='sub4_conv5_3_pool1_interp')(pool1)
+                             name='sub4_conv5_3_pool1_interp',
+                             interpolation='bilinear')(pool1)
         pool2 = AveragePooling2D(pool_size=pool_height // 2,
                                  strides=pool_height // 2,
                                  name='sub4_conv5_3_pool2')(out_4)
         pool2 = UpSampling2D(size=6 * pool_scale,
-                             name='sub4_conv5_3_pool2_interp')(pool2)
+                             name='sub4_conv5_3_pool2_interp',
+                             interpolation='bilinear')(pool2)
         pool3 = AveragePooling2D(pool_size=pool_height // 3,
                                  strides=pool_height // 3,
                                  name='sub4_conv5_3_pool3')(out_4)
         pool3 = UpSampling2D(size=4 * pool_scale,
-                             name='sub4_conv5_3_pool3_interp')(pool3)
+                             name='sub4_conv5_3_pool3_interp',
+                             interpolation='bilinear')(pool3)
         pool4 = AveragePooling2D(pool_size=pool_height // 4,
                                  strides=pool_height // 4,
                                  name='sub4_conv5_3_pool4')(out_4)
         pool4 = UpSampling2D(size=3 * pool_scale,
-                             name='sub4_conv5_3_pool6_interp')(pool4)
+                             name='sub4_conv5_3_pool6_interp',
+                             interpolation='bilinear')(pool4)
 
         out_4 = Add(
             name='sub4_conv5_3_sum'
@@ -383,19 +393,27 @@ class ICNetModelFactory(object):
             int(alpha * 128),
             block_name='sub12_cff'
         )
-        out_1 = UpSampling2D(size=(2, 2), name='sub12_sum_interp')(out_1)
+        out_1 = UpSampling2D(size=(2, 2), name='sub12_sum_interp',
+                             interpolation='bilinear')(out_1)
 
-        out = Conv2D(n_classes, 1, activation='softmax',
-                     name='conv6_cls')(out_1)
+        out_1 = Conv2D(n_classes, 1, activation='softmax',
+                       name='conv6_cls')(out_1)
 
-        if train:
+        out = UpSampling2D(size=(4, 4), name='conv6_interp',
+                           interpolation='bilinear')(out_1)
+
+        if train and not train_refinement:
             aux_1 = Conv2D(n_classes, 1, activation='softmax',
                            name='sub4_out')(aux_1)
             aux_2 = Conv2D(n_classes, 1, activation='softmax',
                            name='sub24_out')(aux_2)
-            model = Model(inputs=inpt, outputs=[out, aux_2, aux_1])
+            model = Model(inputs=inpt, outputs=[out_1, aux_2, aux_1])
         else:
             model = Model(inputs=inpt, outputs=out)
+
+        if build_refinement:
+            model = cls._build_refinement(
+                model, n_classes, train_refinement=train_refinement)
 
         if weights_path is not None:
             if weights_path.startswith('gs://'):
@@ -403,7 +421,47 @@ class ICNetModelFactory(object):
             logger.info('Loading weights from %s.' % weights_path)
             model.load_weights(weights_path, by_name=True)
         logger.info('Done building model.')
+
         return model
+
+    @classmethod
+    def _build_refinement(cls, model, n_classes, train_refinement=False):
+        inpt = model.input
+
+        # Prevent rest of network from being trained.
+        for layer in model.layers:
+            layer.trainable = False
+
+        conv_fn = partial(
+            Conv2D,
+            kernel_size=3,
+            padding='same',
+            use_bias=False,
+            activation='relu'
+        )
+
+        block_name = 'refinement'
+
+        def _argmax(x):
+            x = K.argmax(x, axis=-1)
+            x = K.tf.expand_dims(x, axis=-1)
+            return K.tf.cast(x, tf.float32)
+
+        out = Lambda(_argmax)(model.output)
+
+        out = Concatenate()([inpt, out])
+        out = conv_fn(name='out_conv1', filters=64)(out)
+        out = BatchNormalization(name='%s_1_3x3_bn_1' % block_name)(out)
+        out = conv_fn(name='out_conv2', filters=64)(out)
+        out = BatchNormalization(name='%s_1_3x3_bn_2' % block_name)(out)
+        out = conv_fn(name='out_conv3', filters=64)(out)
+        out = BatchNormalization(name='%s_1_3x3_bn_3' % block_name)(out)
+        out = Conv2D(n_classes, 3, activation='softmax',
+                     padding='same',
+                     name='conv7_cls')(out)
+
+        print(out)
+        return Model(inputs=inpt, outputs=out)
 
 
 def _copy_file_from_gcs(file_path):

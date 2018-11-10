@@ -42,7 +42,7 @@ def main(argv):
     )
     parser.add_argument(
         '-a', '--annotation-dir', type=str, required=True,
-        help='Folder containing annotations for trainng images'
+        help='Folder containing annotations for training images'
     )
     parser.add_argument(
         '-o', '--output', type=str, required=True,
@@ -113,12 +113,13 @@ def _parse_whitelist_labels(whitelist):
     parsed = [category.split(':') for category in parsed]
     return parsed
 
+
 def _save_whitelist_labels(whitelist_filename, labels):
     with open(whitelist_filename, 'w') as wfid:
         header = 'idx\tlabel\n'
         wfid.write(header)
         for idx, label_set in enumerate(labels):
-            label = ':'.join(label_set[0])
+            label = label_set[0].split(',')[0]
             wfid.write('%d\t%s\n' % (idx, label))
 
 

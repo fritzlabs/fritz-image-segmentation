@@ -7,12 +7,25 @@ import sys
 import os
 
 from tensorflow.python.lib.io import file_io
-
+import tensorflow as tf
 from image_segmentation.icnet import ICNetModelFactory
 from image_segmentation.data_generator import ADE20KDatasetBuilder
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('train')
+
+
+def _summarize_arguments(args):
+    """Summarize input arguments to ICNet model training.
+
+    Args:
+        args:
+    """
+
+    logger.info('ICNet Model training Parameters')
+    logger.info('-------------------------------')
+    for key, value in vars(args).items():
+        logger.info('    {key}={value}'.format(key=key, value=value))
 
 
 def train(argv):
@@ -66,6 +79,9 @@ def train(argv):
         '-o', '--output', type=str, required=True,
         help='An output file to save the trained model.')
     parser.add_argument(
+        '-c', '--cores', type=int, default=1,
+        help='Number of GPU cores to run on.')
+    parser.add_argument(
         '--fine-tune-checkpoint', type=str,
         help='A Keras model checkpoint to load and continue training.'
     )
@@ -73,8 +89,14 @@ def train(argv):
         '--gcs-bucket', type=str,
         help='A GCS Bucket to save models too.'
     )
+    parser.add_argument(
+        '--refine', action='store_true', default=False,
+        help='refine model or not.'
+    )
 
     args, unknown = parser.parse_known_args()
+
+    _summarize_arguments(args)
 
     class_labels = ADE20KDatasetBuilder.load_class_labels(
         args.label_filename)
@@ -93,32 +115,68 @@ def train(argv):
         n_classes=n_classes,
         batch_size=args.batch_size,
         image_size=(args.image_size, args.image_size),
-        augment_images=args.augment_images
+        augment_images=False,
+        parallel_calls=4,
+        prefetch=True,
     )
 
     iterator = dataset.make_one_shot_iterator()
     example = iterator.get_next()
 
-    icnet = ICNetModelFactory.build(
-        args.image_size,
-        n_classes,
-        weights_path=args.fine_tune_checkpoint,
-        train=True,
-        input_tensor=example['image'],
-        alpha=args.alpha
-    )
+    sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+    keras.backend.set_session = sess
+
+    build_refinement = args.refine
+    train_refinement = args.refine
+
+    if args.cores > 1:
+        with tf.device('/GPU:0'):
+            icnet = ICNetModelFactory.build(
+                args.image_size,
+                n_classes,
+                weights_path=args.fine_tune_checkpoint,
+                train=True,
+                input_tensor=example['image'],
+                alpha=args.alpha,
+                build_refinement=build_refinement,
+                train_refinement=train_refinement,
+            )
+
+        gpu_icnet = keras.utils.multi_gpu_model(icnet, gpus=args.cores)
+        gpu_icnet.__setattr__('callback_model', icnet)
+        model = gpu_icnet
+    else:
+        with tf.device('/GPU:0'):
+            model = ICNetModelFactory.build(
+                args.image_size,
+                n_classes,
+                weights_path=args.fine_tune_checkpoint,
+                train=True,
+                input_tensor=example['image'],
+                alpha=args.alpha,
+                train_refinement=train_refinement,
+                build_refinement=build_refinement,
+            )
 
     optimizer = keras.optimizers.Adam(lr=args.lr)
-    icnet.compile(
-        optimizer,
-        loss=keras.losses.categorical_crossentropy,
-        loss_weights=[1.0, 0.4, 0.16],
-        metrics=['categorical_accuracy'],
-        target_tensors=[
+    if not build_refinement:
+        loss_weights = [1.0, 0.4, 0.16]
+        target_tensors = [
             example['mask_4'], example['mask_8'], example['mask_16']
         ]
+    else:
+        loss_weights = [1.0]
+        target_tensors = [example['mask_1']]
+
+    model.compile(
+        optimizer,
+        loss=keras.losses.categorical_crossentropy,
+        loss_weights=loss_weights,
+        metrics=['categorical_accuracy'],
+        target_tensors=target_tensors
     )
 
+    # icnet.save(args.output)
     callbacks = [
         keras.callbacks.ModelCheckpoint(
             args.output,
@@ -131,7 +189,7 @@ def train(argv):
     if args.gcs_bucket:
         callbacks.append(SaveCheckpointToGCS(args.output, args.gcs_bucket))
 
-    icnet.fit(
+    model.fit(
         steps_per_epoch=args.steps_per_epoch,
         epochs=int(args.num_steps / args.steps_per_epoch) + 1,
         callbacks=callbacks,
