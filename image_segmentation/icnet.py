@@ -251,9 +251,7 @@ class ICNetModelFactory(object):
             alpha=1.0,
             weights_path=None,
             train=False,
-            input_tensor=None,
-            build_refinement=None,
-            train_refinement=None):
+            input_tensor=None):
         """Build an ICNet Model.
 
         Args:
@@ -411,10 +409,6 @@ class ICNetModelFactory(object):
         else:
             model = Model(inputs=inpt, outputs=out)
 
-        if build_refinement:
-            model = cls._build_refinement(
-                model, n_classes, train_refinement=train_refinement)
-
         if weights_path is not None:
             if weights_path.startswith('gs://'):
                 weights_path = _copy_file_from_gcs(weights_path)
@@ -423,45 +417,6 @@ class ICNetModelFactory(object):
         logger.info('Done building model.')
 
         return model
-
-    @classmethod
-    def _build_refinement(cls, model, n_classes, train_refinement=False):
-        inpt = model.input
-
-        # Prevent rest of network from being trained.
-        for layer in model.layers:
-            layer.trainable = False
-
-        conv_fn = partial(
-            Conv2D,
-            kernel_size=3,
-            padding='same',
-            use_bias=False,
-            activation='relu'
-        )
-
-        block_name = 'refinement'
-
-        def _argmax(x):
-            x = K.argmax(x, axis=-1)
-            x = K.tf.expand_dims(x, axis=-1)
-            return K.tf.cast(x, tf.float32)
-
-        out = Lambda(_argmax)(model.output)
-
-        out = Concatenate()([inpt, out])
-        out = conv_fn(name='out_conv1', filters=64)(out)
-        out = BatchNormalization(name='%s_1_3x3_bn_1' % block_name)(out)
-        out = conv_fn(name='out_conv2', filters=64)(out)
-        out = BatchNormalization(name='%s_1_3x3_bn_2' % block_name)(out)
-        out = conv_fn(name='out_conv3', filters=64)(out)
-        out = BatchNormalization(name='%s_1_3x3_bn_3' % block_name)(out)
-        out = Conv2D(n_classes, 3, activation='softmax',
-                     padding='same',
-                     name='conv7_cls')(out)
-
-        print(out)
-        return Model(inputs=inpt, outputs=out)
 
 
 def _copy_file_from_gcs(file_path):

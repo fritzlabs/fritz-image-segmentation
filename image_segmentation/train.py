@@ -130,7 +130,7 @@ def train(argv):
     train_refinement = args.refine
 
     if args.cores > 1:
-        with tf.device('/GPU:0'):
+        with tf.device('/CPU:0'):
             icnet = ICNetModelFactory.build(
                 args.image_size,
                 n_classes,
@@ -159,24 +159,17 @@ def train(argv):
             )
 
     optimizer = keras.optimizers.Adam(lr=args.lr)
-    if not build_refinement:
-        loss_weights = [1.0, 0.4, 0.16]
-        target_tensors = [
-            example['mask_4'], example['mask_8'], example['mask_16']
-        ]
-    else:
-        loss_weights = [1.0]
-        target_tensors = [example['mask_1']]
 
     model.compile(
         optimizer,
         loss=keras.losses.categorical_crossentropy,
-        loss_weights=loss_weights,
+        loss_weights=[1.0, 0.4, 0.16],
         metrics=['categorical_accuracy'],
-        target_tensors=target_tensors
+        target_tensors=[
+            example['mask_4'], example['mask_8'], example['mask_16']
+        ]
     )
 
-    # icnet.save(args.output)
     callbacks = [
         keras.callbacks.ModelCheckpoint(
             args.output,
