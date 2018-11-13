@@ -42,6 +42,7 @@ train-local:
 	    --lr 0.0001 \
 	    --fine-tune-checkpoint data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1.h5 \
 	    -o data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1.h5
+	    --label-set ${LABEL_SET}
 
 
 train-cloud:

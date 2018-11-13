@@ -45,6 +45,10 @@ def train(argv):
         help='A file containing a single label per line.'
     )
     parser.add_argument(
+        '--label-set', type=str,
+        help='Label set to use.'
+    )
+    parser.add_argument(
         '-s', '--image-size', type=int, default=768,
         help=('The pixel dimension of model input and output. Images '
               'will be square.')
@@ -126,8 +130,11 @@ def train(argv):
     # example = iterator.get_next()
 
     device_id = 0
-    tfrecord_path = 'data/people/people_data.tfrecord'
-    index_path = 'data/people/people_data.tfindex'
+    tfrecord_path = 'data/{label_set}/{label_set}_data.tfrecord'.format(
+        label_set=args.label_set)
+    index_path = 'data/{label_set}/{label_set}_data.tfindex'.format(
+        label_set=args.label_set
+    )
 
     pipe = CommonPipeline(
         args.batch_size,
