@@ -37,10 +37,10 @@ train-local:
 	    -n 1000 \
 	    -s 768 \
 	    -a 1 \
-	    --steps-per-epoch 50 \
-	    --batch-size 32 \
+	    --batch-size 12 \
 	    --parallel-calls 8 \
 	    --lr 0.0001 \
+	    --fine-tune-checkpoint data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1.h5 \
 	    -o data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1.h5
 
 

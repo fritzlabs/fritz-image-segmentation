@@ -88,6 +88,7 @@ def main(argv):
     whitelist_indices = None
     if args.whitelist_labels:
         whitelist_labels = _parse_whitelist_labels(args.whitelist_labels)
+        print(whitelist_labels)
         # add a 'none' class with a label of 0
         whitelist_labels.insert(0, ['none'])
         whitelist_indices = _find_whitelist_indices(
@@ -115,12 +116,15 @@ def _parse_whitelist_labels(whitelist):
 
 
 def _save_whitelist_labels(whitelist_filename, labels):
+    print(labels)
+    print(whitelist_filename)
     with open(whitelist_filename, 'w') as wfid:
         header = 'idx\tlabel\n'
         wfid.write(header)
         for idx, label_set in enumerate(labels):
             label = label_set[0].split(',')[0]
             wfid.write('%d\t%s\n' % (idx, label))
+    print("Saved")
 
 
 def _load_class_labels(label_filename):

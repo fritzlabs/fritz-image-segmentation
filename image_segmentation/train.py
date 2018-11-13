@@ -10,6 +10,8 @@ from tensorflow.python.lib.io import file_io
 import tensorflow as tf
 from image_segmentation.icnet import ICNetModelFactory
 from image_segmentation.data_generator import ADE20KDatasetBuilder
+from image_segmentation.dali_pipeline import CommonPipeline
+import nvidia.dali.plugin.tf as dali_tf
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('train')
@@ -110,18 +112,50 @@ def train(argv):
 
     n_classes = len(class_labels)
 
-    dataset = ADE20KDatasetBuilder.build(
-        args.tfrecord_data,
-        n_classes=n_classes,
-        batch_size=args.batch_size,
-        image_size=(args.image_size, args.image_size),
-        augment_images=False,
-        parallel_calls=args.parallel_calls,
-        prefetch=True,
-    )
+    # dataset = ADE20KDatasetBuilder.build(
+    #     args.tfrecord_data,
+    #     n_classes=n_classes,
+    #     batch_size=args.batch_size,
+    #     image_size=(args.image_size, args.image_size),
+    #     augment_images=False,
+    #     parallel_calls=args.parallel_calls,
+    #     prefetch=True,
+    # )
 
-    iterator = dataset.make_one_shot_iterator()
-    example = iterator.get_next()
+    # iterator = dataset.make_one_shot_iterator()
+    # example = iterator.get_next()
+
+    device_id = 0
+    tfrecord_path = 'data/people/people_data.tfrecord'
+    index_path = 'data/people/people_data.tfindex'
+
+    pipe = CommonPipeline(
+        args.batch_size,
+        args.parallel_calls,
+        device_id,
+        args.image_size,
+        tfrecord_path,
+        index_path)
+    pipe.build()
+
+    daliop = dali_tf.DALIIterator()
+    with tf.device('/gpu:0'):
+        results = daliop(
+            serialized_pipeline=pipe.serialize(),
+            shapes=[[
+                args.batch_size, args.image_size, args.image_size, 3
+            ], [
+                args.batch_size, args.image_size // 4,
+                args.image_size // 4, 3
+            ], [
+                args.batch_size, args.image_size // 8,
+                args.image_size // 8, 3
+            ], [
+                args.batch_size, args.image_size // 16,
+                args.image_size // 16, 3
+            ]],
+            dtypes=[tf.float32, tf.int32, tf.int32, tf.int32]
+        )
 
     sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
     keras.backend.set_session = sess
@@ -133,7 +167,7 @@ def train(argv):
                 n_classes,
                 weights_path=args.fine_tune_checkpoint,
                 train=True,
-                input_tensor=example['image'],
+                input_tensor=results[0],
                 alpha=args.alpha,
             )
 
@@ -147,19 +181,23 @@ def train(argv):
                 n_classes,
                 weights_path=args.fine_tune_checkpoint,
                 train=True,
-                input_tensor=example['image'],
+                input_tensor=results[0],
                 alpha=args.alpha,
             )
 
     optimizer = keras.optimizers.Adam(lr=args.lr)
-
+    mask_4, mask_8, mask_16 = results[1], results[2], results[3]
+    mask_4 = tf.one_hot(mask_4[:, :, :, 0], depth=n_classes, dtype=tf.float32)
+    mask_8 = tf.one_hot(mask_8[:, :, :, 0], depth=n_classes, dtype=tf.float32)
+    mask_16 = tf.one_hot(mask_16[:, :, :, 0], depth=n_classes,
+                         dtype=tf.float32)
     model.compile(
         optimizer,
         loss=keras.losses.categorical_crossentropy,
         loss_weights=[1.0, 0.4, 0.16],
         metrics=['categorical_accuracy'],
         target_tensors=[
-            example['mask_4'], example['mask_8'], example['mask_16']
+            mask_4, mask_8, mask_16
         ]
     )
 

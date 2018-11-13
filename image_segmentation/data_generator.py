@@ -275,6 +275,17 @@ class ADE20KDatasetBuilder(object):
         return example
 
     @classmethod
+    def scale_mask(cls, mask, scale, image_size, n_classes):
+        return tf.one_hot(
+            cls._resize_fn(
+                mask,
+                list(map(lambda x: x // scale, image_size))
+            )[:, :, 0],  # only need one channel
+            depth=n_classes,
+            dtype=tf.float32
+        )
+
+    @classmethod
     def build(
             cls,
             filename,
