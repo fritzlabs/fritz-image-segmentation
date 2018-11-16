@@ -34,15 +34,32 @@ train-local:
 	python -m image_segmentation.train \
 	    -d data/${LABEL_SET}/${LABEL_SET}_data.tfrecord \
 	    -l data/${LABEL_SET}/labels.txt \
-	    -n 1000 \
+	    -n 500000 \
 	    -s 768 \
 	    -a 1 \
 	    --batch-size 12 \
-	    --parallel-calls 8 \
+	    --steps-per-epoch 2500 \
+	    --parallel-calls 4 \
 	    --lr 0.0001 \
 	    --fine-tune-checkpoint data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1.h5 \
-	    -o data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1.h5
+	    -o data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1_fine.h5 \
 	    --label-set ${LABEL_SET}
+
+train-local-small:
+	python -m image_segmentation.train \
+	    -d data/${LABEL_SET}/${LABEL_SET}_data.tfrecord \
+	    -l data/${LABEL_SET}/labels.txt \
+	    -n 500000 \
+	    -s 384 \
+	    -a 1 \
+	    --batch-size 12 \
+	    --steps-per-epoch 2500 \
+	    --parallel-calls 4 \
+	    --lr 0.0005 \
+	    --fine-tune-checkpoint data/${LABEL_SET}/${LABEL_SET}_icnet_384x384.h5 \
+	    -o data/${LABEL_SET}/${LABEL_SET}_icnet_384x384.h5 \
+	    --label-set ${LABEL_SET}
+
 
 
 train-cloud:

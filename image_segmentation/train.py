@@ -5,7 +5,7 @@ import keras
 import logging
 import sys
 import os
-
+import random
 from tensorflow.python.lib.io import file_io
 import tensorflow as tf
 from image_segmentation.icnet import ICNetModelFactory
@@ -115,7 +115,8 @@ def train(argv):
         sys.exit()
 
     n_classes = len(class_labels)
-
+    batch_size = args.batch_size
+    image_size = args.image_size
     # dataset = ADE20KDatasetBuilder.build(
     #     args.tfrecord_data,
     #     n_classes=n_classes,
@@ -132,40 +133,61 @@ def train(argv):
     device_id = 0
     tfrecord_path = 'data/{label_set}/{label_set}_data.tfrecord'.format(
         label_set=args.label_set)
-    index_path = 'data/{label_set}/{label_set}_data.tfindex'.format(
+    tfindex_path = 'data/{label_set}/{label_set}_data.tfindex'.format(
         label_set=args.label_set
     )
+    tfrecord_path1 = 'data/large_people/filtered.tfrecord'
+    tfindex_path1 = 'data/large_people/filtered.tfindex'
+    tfrecord_path2 = 'data/kaggle_filtered.tfrecord'
+    tfindex_path2 = 'data/kaggle_filtered.tfindex'
+    tfrecord_path = 'data/combined2.tfrecord'
+    tfindex_path = 'data/combined2.tfindex'
+
+    # bad = [4, 6, 19, 39, 47, 53, 59, 83, 88, 107]
+    # valid_indices = [i for i in range(110) if i not in bad]
+    # indices = [random.choice(valid_indices) for _ in range(5)]
+
+    # tfrecord_paths = ['data/chunked/coco-%s.tfrecord' % i
+    #                   for i in indices]
+    # tfindex_paths = ['data/chunked/coco-%s.tfindex' % i
+    #                  for i in indices]
+
+    # print("Chosen paths")
+    # print(tfrecord_paths)
 
     pipe = CommonPipeline(
         args.batch_size,
         args.parallel_calls,
         device_id,
         args.image_size,
-        tfrecord_path,
-        index_path)
+        [tfrecord_path],
+        [tfindex_path],
+        # [tfrecord_path1, tfrecord_path],
+        # [tfindex_path1, tfindex_path],
+    )
     pipe.build()
 
     daliop = dali_tf.DALIIterator()
     with tf.device('/gpu:0'):
         results = daliop(
             serialized_pipeline=pipe.serialize(),
-            shapes=[[
-                args.batch_size, args.image_size, args.image_size, 3
-            ], [
-                args.batch_size, args.image_size // 4,
-                args.image_size // 4, 3
-            ], [
-                args.batch_size, args.image_size // 8,
-                args.image_size // 8, 3
-            ], [
-                args.batch_size, args.image_size // 16,
-                args.image_size // 16, 3
-            ]],
-            dtypes=[tf.float32, tf.int32, tf.int32, tf.int32]
+            shape=[args.batch_size, args.image_size, args.image_size, 3],
+            label_type=tf.int64,
         )
 
-    sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.8)
+    config = tf.ConfigProto(gpu_options=gpu_options)
+    sess = tf.Session(config=config)
     keras.backend.set_session = sess
+
+    # add some noise!
+    input_tensor = results.batch
+    noise = tf.random_normal(shape=tf.shape(input_tensor),
+                             mean=0.0,
+                             stddev=0.07,
+                             dtype=tf.float32)
+    input_tensor = input_tensor + noise
+
 
     if args.cores > 1:
         with tf.device('/CPU:0'):
@@ -174,7 +196,7 @@ def train(argv):
                 n_classes,
                 weights_path=args.fine_tune_checkpoint,
                 train=True,
-                input_tensor=results[0],
+                input_tensor=results.batch,
                 alpha=args.alpha,
             )
 
@@ -188,16 +210,20 @@ def train(argv):
                 n_classes,
                 weights_path=args.fine_tune_checkpoint,
                 train=True,
-                input_tensor=results[0],
+                input_tensor=results.batch,
                 alpha=args.alpha,
             )
 
     optimizer = keras.optimizers.Adam(lr=args.lr)
-    mask_4, mask_8, mask_16 = results[1], results[2], results[3]
-    mask_4 = tf.one_hot(mask_4[:, :, :, 0], depth=n_classes, dtype=tf.float32)
-    mask_8 = tf.one_hot(mask_8[:, :, :, 0], depth=n_classes, dtype=tf.float32)
-    mask_16 = tf.one_hot(mask_16[:, :, :, 0], depth=n_classes,
-                         dtype=tf.float32)
+    results.label.set_shape([batch_size, image_size, image_size, 3])
+    mask = results.label
+    new_shape = [image_size / 4, image_size / 4]
+    mask_4 = ADE20KDatasetBuilder.scale_mask(mask, 4, new_shape, n_classes)
+    new_shape = [image_size / 8, image_size / 8]
+    mask_8 = ADE20KDatasetBuilder.scale_mask(mask, 8, new_shape, n_classes)
+    new_shape = [image_size / 16, image_size / 16]
+    mask_16 = ADE20KDatasetBuilder.scale_mask(mask, 16, new_shape, n_classes)
+
     model.compile(
         optimizer,
         loss=keras.losses.categorical_crossentropy,
