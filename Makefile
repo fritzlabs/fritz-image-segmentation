@@ -41,9 +41,9 @@ train-local:
 	    --steps-per-epoch 2500 \
 	    --parallel-calls 4 \
 	    --lr 0.0001 \
-	    --fine-tune-checkpoint data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1.h5 \
-	    -o data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1_fine.h5 \
-	    --label-set ${LABEL_SET}
+	    --fine-tune-checkpoint data/${LABEL_SET}/${LABEL_SET}_icnet_768x768_1_fine.h5 \
+	    --add-noise \
+	    --model-name people_with_noise
 
 train-local-small:
 	python -m image_segmentation.train \
@@ -57,9 +57,7 @@ train-local-small:
 	    --parallel-calls 4 \
 	    --lr 0.0005 \
 	    --fine-tune-checkpoint data/${LABEL_SET}/${LABEL_SET}_icnet_384x384.h5 \
-	    -o data/${LABEL_SET}/${LABEL_SET}_icnet_384x384.h5 \
-	    --label-set ${LABEL_SET}
-
+	    -n people_with_noise
 
 
 train-cloud:
@@ -67,18 +65,21 @@ train-cloud:
 	gcloud ml-engine jobs submit training `whoami`_image_segmentation_`date +%s` \
 	    --runtime-version 1.9 \
 	    --job-dir=gs://${GCS_BUCKET} \
-	    --packages dist/image_segmentation-1.0.tar.gz \
+	    --packages dist/image_segmentation-1.0.tar.gz,nvidia_dali-0.4.1-38228-cp27-cp27mu-manylinux1_x86_64.whl \
 	    --module-name image_segmentation.train \
 	    --region us-central1 \
 	    --config config.yaml \
 	    -- \
 	    -d gs://fritz-data-sandbox/ADEChallengeData2016/people/people_data.tfrecord \
 	    -l gs://fritz-data-sandbox/ADEChallengeData2016/people/labels.txt \
-	    --fine-tune-checkpoint gs://fritz-image-segmentation-us-central/train/outdoor_objects_1536x1536_1_people_trained.h5 \
-	    -o ${LABEL_SET}_1536x1536_1_people_trained_k80.h5 \
-	    --image-size 1536 \
-	    --alpha 1 \
-	    --cores 1 \
-	    --num-steps 2500 \
-	    --batch-size 4 \
+	    --use-dali \
+	    -n 5000 \
+	    -s 768 \
+	    -a 1 \
+	    --batch-size 12 \
+	    --steps-per-epoch 250 \
+	    --parallel-calls 4 \
+	    --lr 0.001 \
+	    --add-noise \
+	    --model-name ${MODEL_NAME} \
 	    --gcs-bucket gs://${GCS_BUCKET}/train
