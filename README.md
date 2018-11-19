@@ -85,6 +85,7 @@ gcloud ml-engine jobs submit training `whoami`_image_segmentation_`date +%s` \
     --alpha 0.25 \
     --num-steps 5000 \
     --batch-size 24 \
+    --model-name ${LABEL_SET} \
     --gcs-bucket gs://fritz-image-segmentation/train
 ```
 
