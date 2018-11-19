@@ -46,20 +46,6 @@ train-local:
 	    --add-noise \
 	    --model-name people_with_noise
 
-train-local-small:
-	python -m image_segmentation.train \
-	    -d data/${LABEL_SET}/${LABEL_SET}_data.tfrecord \
-	    -l data/${LABEL_SET}/labels.txt \
-	    -n 500000 \
-	    -s 384 \
-	    -a 1 \
-	    --batch-size 12 \
-	    --steps-per-epoch 2500 \
-	    --parallel-calls 4 \
-	    --lr 0.0005 \
-	    --fine-tune-checkpoint data/${LABEL_SET}/${LABEL_SET}_icnet_384x384.h5 \
-	    -n people_with_noise
-
 
 train-cloud:
 	python setup.py sdist
