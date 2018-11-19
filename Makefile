@@ -32,7 +32,8 @@ train-local-refine:
 
 train-local:
 	python -m image_segmentation.train \
-	    -d data/${LABEL_SET}/${LABEL_SET}_data.tfrecord \
+	    --data data/combined2.tfrecord \
+	    --use-dali \
 	    -l data/${LABEL_SET}/labels.txt \
 	    -n 500000 \
 	    -s 768 \

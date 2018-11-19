@@ -5,6 +5,7 @@ import keras
 import logging
 import time
 import sys
+import struct
 import os
 from tensorflow.python.lib.io import file_io
 import tensorflow as tf
@@ -135,6 +136,40 @@ def _prepare_dataset(args, n_classes):
     }
 
 
+def build_tfindex_file(tfrecord_file, tfindex_file):
+    """Builds a tfindex file used by DALI from a tfrecord file.
+
+    Args:
+        tfrecord_file: Path to TFRecord file.
+        tfindex_file: output file to write to.
+    """
+    tfrecord_fp = open(tfrecord_file, 'rb')
+    idx_fp = open(tfindex_file, 'w')
+
+    while True:
+        current = tfrecord_fp.tell()
+        try:
+            # length
+            byte_len = tfrecord_fp.read(8)
+            if byte_len == '':
+                break
+            # crc
+            tfrecord_fp.read(4)
+            proto_len = struct.unpack('q', byte_len)[0]
+            # proto
+            tfrecord_fp.read(proto_len)
+            # crc
+            tfrecord_fp.read(4)
+            idx_fp.write(str(current) + ' ' +
+                         str(tfrecord_fp.tell() - current) + '\n')
+        except Exception:
+            print("Not a valid TFRecord file")
+            break
+
+    tfrecord_fp.close()
+    idx_fp.close()
+
+
 def _prepare_dali(args, n_classes):
     if args.gpu_cores > 1:
         logger.error(
@@ -154,8 +189,8 @@ def _prepare_dali(args, n_classes):
     filenames = []
 
     for filename in args.data:
-        if filename.startswith('gcs://'):
-            parts = filename[6:].split('/')
+        if filename.startswith('gs://'):
+            parts = filename[5:].split('/')
             bucket_name, blob_name = parts[0], '/'.join(parts[1:])
             bucket = storage_client.get_bucket(bucket_name)
             blob = bucket.blob(blob_name)
@@ -167,12 +202,9 @@ def _prepare_dali(args, n_classes):
 
     tfindex_files = args.tfindex_files or []
     if not tfindex_files:
-        for path in args.data:
+        for path in filenames:
             tfindex_file = path.split('.')[0] + '.tfindex'
-            os.system('utils/tfrecord2idx {input} {output}'.format(
-                input=path,
-                output=tfindex_file
-            ))
+            build_tfindex_file(path, tfindex_file)
             logger.info('Created tfindex file: {input} -> {output}'.format(
                 input=path,
                 output=tfindex_file

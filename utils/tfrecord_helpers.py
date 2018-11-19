@@ -1,9 +1,11 @@
+import io
+import sys
+import struct
+import random
+import six
 import tensorflow as tf
 import numpy
 import PIL
-import io
-import six
-import random
 
 
 def iterate_tfrecord(filename, decode=False):
