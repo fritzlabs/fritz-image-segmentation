@@ -40,8 +40,13 @@ class CommonPipeline(dali.pipeline.Pipeline):
 
         self.image_size = image_size
         self.input = self._input(tfrecord_path, index_path, shard_id=shard_id)
-        self.decode = ops.nvJPEGDecoder(device="mixed",
-                                        output_type=types.RGB)
+        # The nvjpeg decoder throws an error for some unsupported jpegs.
+        # until this is fixed, we'll use the host decoder, which runs on the
+        # CPU.
+        # self.decode = ops.nvJPEGDecoder(device="mixed",
+        #                                 output_type=types.RGB)
+        self.decode = ops.HostDecoder(device="cpu",
+                                      output_type=types.RGB)
         self.resize = ops.Resize(device="gpu",
                                  image_type=types.RGB,
                                  interp_type=types.INTERP_LINEAR,
@@ -108,6 +113,7 @@ class CommonPipeline(dali.pipeline.Pipeline):
         crop_y = self.crop_y_rng()
 
         images = self.decode(inputs["image/encoded"])
+        images = images.gpu()
         images = self.resize_large(images)
         images = self.rotate(images, angle=angle)
         images = self.crop(images, crop_pos_x=crop_x, crop_pos_y=crop_y)
@@ -120,6 +126,7 @@ class CommonPipeline(dali.pipeline.Pipeline):
         images = self.flip(images, horizontal=coin)
 
         masks = self.decode(inputs["image/segmentation/class/encoded"])
+        masks = masks.gpu()
         masks = self.resize_large(masks)
         masks = self.rotate(masks, angle=angle)
         masks = self.crop(masks, crop_pos_x=crop_x, crop_pos_y=crop_y)
