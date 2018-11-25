@@ -33,9 +33,12 @@ class CommonPipeline(dali.pipeline.Pipeline):
                  device_id,
                  image_size,
                  tfrecord_path,
-                 index_path, shard_id=0):
+                 index_path,
+                 config,
+                 shard_id=0):
 
-        super(CommonPipeline, self).__init__(batch_size, num_threads,
+        super(CommonPipeline, self).__init__(batch_size,
+                                             num_threads,
                                              device_id)
 
         self.image_size = image_size
@@ -56,18 +59,13 @@ class CommonPipeline(dali.pipeline.Pipeline):
         self.resize_large = ops.Resize(device="gpu",
                                        image_type=types.RGB,
                                        interp_type=types.INTERP_LINEAR,
-                                       resize_x=image_size * 1.3,
-                                       resize_y=image_size * 1.3)
+                                       resize_x=image_size * config.zoom_scale,
+                                       resize_y=image_size * config.zoom_scale)
 
         self.color_twist = ops.ColorTwist(
             device="gpu",
         )
-        self.hue_rng = ops.Uniform(range=(-30, 30))
-        self.contrast_rng = ops.Uniform(range=(0.45, 1.5))
-        self.saturation_rng = ops.Uniform(range=(0.4, 2.0))
-        self.brightness_rng = ops.Uniform(range=(0.35, 1.5))
-
-        self.cmn = ops.CropMirrorNormalize(
+        self.crop_mirror_normalize = ops.CropMirrorNormalize(
             device="gpu",
             crop=image_size,
             output_dtype=types.FLOAT,
@@ -90,14 +88,21 @@ class CommonPipeline(dali.pipeline.Pipeline):
             device="gpu",
             fill_value=0
         )
+        self.flip = ops.Flip(device="gpu")
 
         self.coin = ops.CoinFlip(probability=0.5)
-        self.coin2 = ops.CoinFlip(probability=0.5)
-
-        self.flip = ops.Flip(device="gpu")
-        self.rotate_rng = ops.Uniform(range=(-45, 45))
-        self.crop_x_rng = ops.Uniform(range=(0.0, 0.2))
-        self.crop_y_rng = ops.Uniform(range=(0.0, 0.2))
+        self.rotate_rng = ops.Uniform(range=(config.rotate_angle_min,
+                                             config.rotate_angle_max))
+        self.crop_x_rng = ops.Uniform(range=(0.0, config.crop_x_max))
+        self.crop_y_rng = ops.Uniform(range=(0.0, config.crop_y_max))
+        self.hue_rng = ops.Uniform(range=(config.hue_min,
+                                          config.hue_max))
+        self.contrast_rng = ops.Uniform(range=(config.contrast_min,
+                                               config.contrast_max))
+        self.saturation_rng = ops.Uniform(range=(config.saturation_min,
+                                                 config.saturation_max))
+        self.brightness_rng = ops.Uniform(range=(config.brightness_min,
+                                                 config.brightness_max))
 
         self.iter = 0
 
@@ -133,7 +138,7 @@ class CommonPipeline(dali.pipeline.Pipeline):
         masks = self.resize(masks)
         masks = self.flip(masks, horizontal=coin)
 
-        images = self.cmn(images)
+        images = self.crop_mirror_normalize(images)
         masks = self.cast(masks)
         return (images, masks)
 

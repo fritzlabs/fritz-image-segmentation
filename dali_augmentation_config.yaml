@@ -1,0 +1,13 @@
+hueMin: -30
+hueMax: 30
+zoomScale: 1.3
+rotateAngleMin: -45
+rotateAngleMax: 45
+cropXMax: 0.2
+cropYMax: 0.2
+contrastMin: 0.45
+contrastMax: 1.5
+saturationMin: 0.4
+saturationMax: 2.0
+brightnessMin: 0.35
+brightnessMax: 1.5

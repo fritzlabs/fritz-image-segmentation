@@ -2,12 +2,8 @@ import logging
 from functools import partial
 import os
 
-from keras.backend import argmax
-import keras.backend as K
 from keras.layers import Activation
-from keras.layers import Concatenate
 from keras.layers import Conv2D
-from keras.layers import Lambda
 from keras.layers import Add
 from keras.layers import MaxPooling2D
 from keras.layers import AveragePooling2D
@@ -18,7 +14,6 @@ from keras.layers import UpSampling2D
 from keras.models import Model
 
 from tensorflow.python.lib.io import file_io
-import tensorflow as tf
 logger = logging.getLogger('icnet')
 
 
@@ -405,6 +400,8 @@ class ICNetModelFactory(object):
                            name='sub4_out')(aux_1)
             aux_2 = Conv2D(n_classes, 1, activation='softmax',
                            name='sub24_out')(aux_2)
+            # The loss during training is generated from these three outputs.
+            # The final output layer is not needed.
             model = Model(inputs=inpt, outputs=[out_1, aux_2, aux_1])
         else:
             model = Model(inputs=inpt, outputs=out)

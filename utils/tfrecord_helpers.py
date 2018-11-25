@@ -9,6 +9,15 @@ import PIL
 
 
 def iterate_tfrecord(filename, decode=False):
+    """Iterate through a tfrecord file.
+
+    Args:
+        filename (str): Filename to iterate.
+        decode (bool): Optionally pass all records to example decoder function.
+            False by default.
+
+    Returns: Iterator of tfrecords.
+    """
     for record in tf.python_io.tf_record_iterator(filename):
         example = tf.train.Example()
         example.ParseFromString(record)
@@ -19,12 +28,25 @@ def iterate_tfrecord(filename, decode=False):
 
 
 def save_tfrecords(records, output_filename):
+    """Save all tfrecord examples to file.
+
+    Args:
+        records (Iterator[tf.train.Example]): Iterator of records to save.
+        output_filename (str): Output file to save to.
+    """
     with tf.python_io.TFRecordWriter(output_filename) as tfrecord_writer:
         for record in records:
             tfrecord_writer.write(record.SerializeToString())
 
 
 def decode_image_tensor(example):
+    """Takes a tfrecord example and decodes image and mask data.
+
+    Args:
+        example (tf.train.Example): TF example to decode.
+
+    Returns: dict of decoded mask and image data.
+    """
     feature_dict = example.features.feature
     image_value = feature_dict['image/encoded'].bytes_list.value[0]
     encoded_mask = feature_dict['image/segmentation/class/encoded']
@@ -49,6 +71,13 @@ def decode_image_tensor(example):
 
 
 def get_png_string(mask_array):
+    """Builds PNG string from mask array.
+
+    Args:
+        mask_array (HxW): Mask array to generate PNG string from.
+
+    Returns: String of mask encoded as a PNG.
+    """
     # Convert the new mask back to an image.
     image = PIL.Image.fromarray(mask_array.astype('uint8')).convert('RGB')
     # Save the new image to a PNG byte string.
@@ -59,6 +88,14 @@ def get_png_string(mask_array):
 
 
 def update_mask(record, mask_array):
+    """Update mask in tensorflow example.
+
+    Args:
+        record (tf.train.Example): Record to update
+        mask_array (numpy.Array): HxW array of class values.
+
+    Returns: Updated tf.train.Example.
+    """
     def norm2bytes(value):
         return value.encode() if isinstance(value, str) and six.PY3 else value
 

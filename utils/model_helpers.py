@@ -118,18 +118,17 @@ class TrainedModel(object):
 
         return results
 
-    def run_prediction(self, img_path=None, img_data=None, img_url=None):
+    def run_prediction(self, img_path=None, img_data=None, img_url=None,
+                       img=None):
         if img_url:
             response = requests.get(img_url)
             img = PIL.Image.open(BytesIO(response.content))
-            img = img.resize((self._params.resolution,
-                              self._params.resolution))
-        if img_path:
+        elif img_path:
             img = PIL.Image.open(img_path)
-            img = img.resize((self._params.resolution,
-                              self._params.resolution))
 
         if img_data is None:
+            img = img.resize((self._params.resolution,
+                              self._params.resolution))
             img_data = numpy.array(img)
             img_data = img_data * 1. / 255. - 0.5
             img_data = skimage.filters.gaussian(img_data, sigma=0.0)

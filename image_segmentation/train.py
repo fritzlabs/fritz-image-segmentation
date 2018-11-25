@@ -11,6 +11,7 @@ from tensorflow.python.lib.io import file_io
 import tensorflow as tf
 from image_segmentation.icnet import ICNetModelFactory
 from image_segmentation.data_generator import ADE20KDatasetBuilder
+from image_segmentation import dali_config
 from google.cloud import storage
 
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +68,10 @@ def _build_parser(argv):
     parser.add_argument(
         '--use-dali', action='store_true',
         help='turn on image augmentation.'
+    )
+    parser.add_argument(
+        '--dali-config-file', default='dali_augmentation_config.yaml',
+        help='Path for dali augmentation configuration.'
     )
     parser.add_argument(
         '--list-labels', action='store_true',
@@ -211,6 +216,9 @@ def _prepare_dali(args, n_classes):
             ))
             tfindex_files.append(tfindex_file)
 
+    config = dali_config.DaliConfig(args.dali_config_file)
+    config.summarize()
+
     pipe = CommonPipeline(
         args.batch_size,
         args.parallel_calls,
@@ -218,6 +226,7 @@ def _prepare_dali(args, n_classes):
         args.image_size,
         filenames,
         tfindex_files,
+        config
     )
     pipe.build()
 
@@ -282,7 +291,7 @@ def train(argv):
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.8)
     config = tf.ConfigProto(gpu_options=gpu_options)
     sess = tf.Session(config=config)
-    keras.backend.set_session = sess
+    keras.backend.set_session(sess)
 
     if args.gpu_cores > 1:
         with tf.device('/CPU:0'):
