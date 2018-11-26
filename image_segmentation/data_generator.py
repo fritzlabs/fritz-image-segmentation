@@ -138,7 +138,7 @@ class ADE20KDatasetBuilder(object):
         # all preprocessing should run on the CPU
         with tf.device('/cpu:0'):
             blurred_image = tf.nn.depthwise_conv2d(
-            tf.cast(tf.expand_dims(image, 0), tf.float32),
+                tf.cast(tf.expand_dims(image, 0), tf.float32),
                 kernel,
                 [1, 1, 1, 1],
                 padding='SAME',
@@ -275,13 +275,27 @@ class ADE20KDatasetBuilder(object):
         return example
 
     @classmethod
+    def scale_mask(cls, mask, scale, image_size, n_classes):
+        return tf.one_hot(
+            cls._resize_fn(
+                mask,
+                image_size,
+            )[:, :, :, 0],  # only need one channel
+            depth=n_classes,
+            dtype=tf.float32
+        )
+
+    @classmethod
     def build(
             cls,
             filename,
             batch_size,
             image_size,
             n_classes,
-            augment_images=True):
+            augment_images=True,
+            repeat=True,
+            prefetch=False,
+            parallel_calls=1):
         """Build a TFRecord dataset.
 
         Args:
@@ -297,14 +311,23 @@ class ADE20KDatasetBuilder(object):
         """
         logger.info('Creating dataset from: %s' % filename)
         dataset = tf.data.TFRecordDataset(filename)
-        dataset = dataset.map(cls._decode_example)
-        dataset = dataset.map(lambda x: cls._resize_example(x, image_size))
+        dataset = dataset.map(cls._decode_example,
+                              num_parallel_calls=parallel_calls)
+        dataset = dataset.map(lambda x: cls._resize_example(x, image_size),
+                              num_parallel_calls=parallel_calls)
         if augment_images:
-            dataset = dataset.map(cls._augment_example)
-        dataset = dataset.map(cls._preprocess_example)
+            dataset = dataset.map(cls._augment_example,
+                                  num_parallel_calls=parallel_calls)
+        dataset = dataset.map(cls._preprocess_example,
+                              num_parallel_calls=parallel_calls)
         dataset = dataset.map(
-            lambda x: cls._generate_multiscale_masks(x, n_classes)
+            lambda x: cls._generate_multiscale_masks(x, n_classes),
+            num_parallel_calls=parallel_calls
         )
-        dataset = dataset.repeat()
+        if repeat:
+            dataset = dataset.repeat()
+
         dataset = dataset.batch(batch_size)
+        if prefetch:
+            dataset = dataset.prefetch(buffer_size=batch_size)
         return dataset

@@ -1,7 +1,10 @@
-Keras==2.1.6
+Keras==2.2.4
 h5py==2.7.1
 numpy==1.14.3
 matplotlib==2.2.2
 scikit-image==0.13.1
 Pillow==5.1.0
-coremltools==0.8
+six==1.10.0
+# Forked coremltools which includes fix for bilinear upsampling.
+# Update this after it has been merged into master.
+-e git+git@github.com:ghop02/coremltools.git@289-add-keras-bilinear-upsampling#egg=coremltools
