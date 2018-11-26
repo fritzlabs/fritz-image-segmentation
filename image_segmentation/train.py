@@ -70,10 +70,6 @@ def _build_parser(argv):
         help='turn on image augmentation.'
     )
     parser.add_argument(
-        '--dali-config-file', default='dali_augmentation_config.yaml',
-        help='Path for dali augmentation configuration.'
-    )
-    parser.add_argument(
         '--list-labels', action='store_true',
         help='If true, print a full list of object labels.'
     )
@@ -216,7 +212,7 @@ def _prepare_dali(args, n_classes):
             ))
             tfindex_files.append(tfindex_file)
 
-    config = dali_config.DaliConfig(args.dali_config_file)
+    config = dali_config.DaliConfig()
     config.summarize()
 
     pipe = CommonPipeline(
